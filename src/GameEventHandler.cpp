@@ -92,6 +92,16 @@ namespace plugin {
             WalkRecalculateNormals(node);
         }
     }
+    static void (*ApplyMorphHookFaceNormalsDetour)(void *e, RE::TESNPC*,RE::BGSHeadPart*,
+                                                   RE::BSFaceGenNiNode *) = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
+                                                                                      RE::BSFaceGenNiNode *)) 0x0;
+    static void ApplyMorphHookFaceNormals(void *morphInterface,RE::TESNPC*npc, RE::BGSHeadPart *part, RE::BSFaceGenNiNode *node) {
+        if (node) {
+            ApplyMorphHookFaceNormalsDetour(morphInterface, npc,part,node);
+            UpdateFaceModel(node);
+            WalkRecalculateNormals(node);
+        }
+    }
     static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
                                                     bool defer) = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
                                                                             bool defer)) 0x0;
@@ -123,6 +133,12 @@ namespace plugin {
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
+                    ApplyMorphHookFaceNormalsDetour = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
+                        (uint64_t) skee64_info.lpBaseOfDll + 0x5f480);
+                    DetourTransactionBegin();
+                    DetourUpdateThread(GetCurrentThread());
+                    DetourAttach(&(PVOID &) ApplyMorphHookFaceNormalsDetour, &ApplyMorphHookFaceNormals);
+                    DetourTransactionCommit();
                     ApplyMorphsHookFaceNormalsDetour =
                         (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0x5f9e0);
                     DetourTransactionBegin();
