@@ -26,20 +26,20 @@ namespace plugin {
                 WalkRecalculateNormals(c_node);
             }
             if (auto geo = obj->AsGeometry()) {
-                logger::info("Recalc1");
+                //logger::info("Recalc1");
                 if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
                     continue;
                 }
-                logger::info("Recalc2");
+                //logger::info("Recalc2");
                 if (geo->GetGeometryRuntimeData().skinInstance->skinPartition == nullptr) {
                     continue;
                 }
-                logger::info("Recalc3");
+                //logger::info("Recalc3");
                 if ((!geo->GetGeometryRuntimeData().vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL)) &&
                     (!geo->GetGeometryRuntimeData().vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT))) {
                     continue;
                 }
-                logger::info("Recalc4");
+                //logger::info("Recalc4");
                 if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect] ||
                     !geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect]
                         ->GetRTTI()->IsKindOf(
@@ -47,20 +47,20 @@ namespace plugin {
                         RE::BSLightingShaderProperty::Ni_RTTI.address())) {
                     continue;
                 }
-                logger::info("Recalc5");
+               // logger::info("Recalc5");
                 RE::BSLightingShaderProperty *property =
                     (RE::BSLightingShaderProperty *) geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
                 auto material = property->material;
                 if (!material) {
                     continue;
                 }
-                logger::info("Recalc6");
+               // logger::info("Recalc6");
                 RE::NiPointer<RE::NiObject> newPartition = nullptr;
                 geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
                 if (!newPartition) {
                     continue;
                 }
-                logger::info("Recalc7");
+               // logger::info("Recalc7");
                 RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
                     RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
                 if (newSkinPartition->partitions.size() == 0) {
@@ -71,20 +71,20 @@ namespace plugin {
                     NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
                     applicator.Apply();
                 }
-                logger::info("Recalc8");
+                //logger::info("Recalc8");
                 for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
                     auto &pPartition = newSkinPartition->partitions[p];
                     memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
                            newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                 }
-                logger::info("Recalc9");
+               // logger::info("Recalc9");
                 uint64_t *UpdateSkinPartition_object = new uint64_t[6];
                 UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
                 
-                uint64_t* skinInstPtr = (uint64_t*) &geo->GetGeometryRuntimeData().skinInstance;
-                uint64_t* skinPartPtr = (uint64_t*) &newSkinPartition;
-                UpdateSkinPartition_object[1] = (uint64_t) *skinPartPtr;
-                UpdateSkinPartition_object[2] = (uint64_t) *skinInstPtr;
+                uint64_t* skinInstPtr = (uint64_t*) geo->GetGeometryRuntimeData().skinInstance.get();
+                uint64_t* skinPartPtr = (uint64_t*) newSkinPartition.get();
+                UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
+                UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
                 UpdateSkinPartition_object[3] = 0x0;
                 UpdateSkinPartition_object[4] = 0x0;
                 UpdateSkinPartition_object[5] = 0x0;
@@ -132,7 +132,7 @@ namespace plugin {
                                                                             bool defer)) 0x0;
     static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, RE::NiNode *node, bool isAttaching, bool defer) {
         ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
-        logger::info("Recalc Caller 2");
+       // logger::info("Recalc Caller 2");
         if (node) {
             if (node->AsNode()) {
                 RE::NiPointer node_ptr(node);
