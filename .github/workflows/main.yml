@@ -42,11 +42,11 @@ jobs:
           cd artifacts
           mkdir SKSE
           mkdir SKSE/Plugins
-          move ../Template.dll SKSE/Plugins
-          move ../Template.pdb SKSE/Plugins
+          move ../skee64backports.dll SKSE/Plugins
+          move ../skee64backports.pdb SKSE/Plugins
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with: 
-          name: Template
+          name: skee64backports
           path: build/bin/release/artifacts
           retention-days: 90
