@@ -108,8 +108,22 @@ namespace plugin {
     static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, RE::NiNode *node, bool isAttaching, bool defer) {
         if (node) {
             if (node->AsNode()) {
+                
                 ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
                 WalkRecalculateNormals(node);
+                if (refr->As<RE::Actor>()) {
+                    if (auto facenode = refr->GetFaceNode()) {
+                        UpdateFaceModel(facenode);
+                        WalkRecalculateNormals(facenode);
+                    }
+                }
+                if (refr->As<RE::Actor>()) {
+                    if (auto facenode = refr->GetFaceNodeSkinned()) {
+                        UpdateFaceModel(facenode);
+                        WalkRecalculateNormals(facenode);
+                    }
+                }
+                
             }
         }
     }
