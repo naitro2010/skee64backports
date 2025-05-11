@@ -12,7 +12,8 @@
 #include "detours/detours.h"
 #include "Morpher.h"
 namespace plugin {
-    #undef GetObject
+#undef GetObject
+    static uint64_t NIOVTaskUpdateSkinPartitionvtable = 0x0;
     static void WalkRecalculateNormals(RE::NiNode *node) {
         if (node == nullptr) {
             return;
@@ -36,8 +37,10 @@ namespace plugin {
                     continue;
                 }
                 if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect] ||
-                    geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect]->Ni_RTTI.address() !=
-                        RE::BSLightingShaderProperty::Ni_RTTI.address()) {
+                    !geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect]
+                        ->GetRTTI()->IsKindOf(
+                        (RE::NiRTTI*)
+                        RE::BSLightingShaderProperty::Ni_RTTI.address())) {
                     continue;
                 }
                 RE::BSLightingShaderProperty *property =
@@ -51,13 +54,14 @@ namespace plugin {
                 if (!newPartition) {
                     continue;
                 }
-                RE::NiPointer<RE::NiSkinPartition> newSkinPartition = RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition*)newPartition.get());
+                RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
+                    RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
                 if (newSkinPartition->partitions.size() == 0) {
                     newSkinPartition->DecRefCount();
                     continue;
                 }
                 {
-                    NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry*)geo), newSkinPartition);
+                    NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
                     applicator.Apply();
                 }
                 for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
@@ -65,12 +69,22 @@ namespace plugin {
                     memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
                            newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                 }
+                uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
+                
+                uint64_t* skinInstPtr = (uint64_t*) &geo->GetGeometryRuntimeData().skinInstance;
+                uint64_t* skinPartPtr = (uint64_t*) &newSkinPartition;
+                UpdateSkinPartition_object[1] = (uint64_t)*skinPartPtr;
+                UpdateSkinPartition_object[2] = (uint64_t) *skinInstPtr;
+                auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
+                RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
             }
         }
     }
     static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
     static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
-                                                RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *)) 0x0;
+                                                    RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
+                                                                                       RE::BSFaceGenNiNode *)) 0x0;
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
         if (node) {
             ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
@@ -78,10 +92,10 @@ namespace plugin {
             WalkRecalculateNormals(node);
         }
     }
-    static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *,
-                                                    RE::NiNode *,bool isAttaching,bool defer) = (void (*)(void *, RE::TESObjectREFR *,
-                                                                                       RE::NiNode *,bool isAttaching, bool defer)) 0x0;
-    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR * refr, RE::NiNode * node, bool isAttaching, bool defer) {
+    static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
+                                                    bool defer) = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
+                                                                            bool defer)) 0x0;
+    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, RE::NiNode *node, bool isAttaching, bool defer) {
         if (node) {
             if (node->AsNode()) {
                 ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
@@ -108,6 +122,7 @@ namespace plugin {
                 if ((skee64_info.SizeOfImage >= 0x16b478 + 7) &&
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
+                    NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
                     ApplyMorphsHookFaceNormalsDetour =
                         (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0x5f9e0);
                     DetourTransactionBegin();
@@ -120,11 +135,15 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
-                    logger::info("SKEE64 1597 normal recaclulation backported");
                     
+                    logger::info("SKEE64 1597 normal recaclulation backported");
                 }
             }
         }
+
+
+                
+
         logger::info("onPostPostLoad()");
     }
 
