@@ -125,8 +125,8 @@ namespace plugin {
                         WalkRecalculateNormals(node);
                     }
                 });
-                if (refr->As<RE::Actor>() && refr->IsPlayer()) {
-                    auto handle = refr->As<RE::Actor>()->GetHandle();
+                if (auto player=RE::PlayerCharacter::GetSingleton()) {
+                    auto handle = player->GetHandle();
                     SKSE::GetTaskInterface()->AddTask([handle]() {
                         if (auto actor = handle.get()) {
                             if (auto facenode = actor->GetFaceNode()) {
