@@ -14,11 +14,14 @@
 namespace plugin {
     #undef GetObject
     static void WalkRecalculateNormals(RE::NiNode *node) {
+        if (node == nullptr) {
+            return;
+        }
         for (RE::NiPointer<RE::NiAVObject> obj: node->GetChildren()) {
             if (obj == nullptr) {
                 continue;
             }
-            if (auto c_node = node->AsNode()) {
+            if (auto c_node = obj->AsNode()) {
                 WalkRecalculateNormals(c_node);
             }
             if (auto geo = obj->AsGeometry()) {
