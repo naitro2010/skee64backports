@@ -69,7 +69,7 @@ namespace plugin {
                     memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
                            newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                 }
-                uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                uint64_t *UpdateSkinPartition_object = new uint64_t[6];
                 UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
                 
                 uint64_t* skinInstPtr = (uint64_t*) &geo->GetGeometryRuntimeData().skinInstance;
@@ -78,6 +78,7 @@ namespace plugin {
                 UpdateSkinPartition_object[2] = (uint64_t) *skinInstPtr;
                 auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
                 RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
+                free(UpdateSkinPartition_object);
             }
         }
     }
@@ -86,12 +87,19 @@ namespace plugin {
                                                     RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
                                                                                        RE::BSFaceGenNiNode *)) 0x0;
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
+        ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         if (node) {
-            ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
-            UpdateFaceModel(node);
-            WalkRecalculateNormals(node);
+            RE::NiPointer<RE::BSFaceGenNiNode> node_ptr(node);
+            SKSE::GetTaskInterface()->AddTask([node_ptr]() {
+                auto node = node_ptr.get();
+                {
+                    UpdateFaceModel(node);
+                    WalkRecalculateNormals(node);
+                }
+            });
         }
     }
+    /*
     static void (*ApplyMorphHookFaceNormalsDetour)(void *e, RE::TESNPC*,RE::BGSHeadPart*,
                                                    RE::BSFaceGenNiNode *) = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
                                                                                       RE::BSFaceGenNiNode *)) 0x0;
@@ -102,26 +110,35 @@ namespace plugin {
             WalkRecalculateNormals(node);
         }
     }
+    */
     static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
                                                     bool defer) = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
                                                                             bool defer)) 0x0;
     static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, RE::NiNode *node, bool isAttaching, bool defer) {
+        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
         if (node) {
             if (node->AsNode()) {
-                
-                ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
-                WalkRecalculateNormals(node);
-                if (refr->As<RE::Actor>()) {
-                    if (auto facenode = refr->GetFaceNode()) {
-                        UpdateFaceModel(facenode);
-                        WalkRecalculateNormals(facenode);
+                RE::NiPointer node_ptr(node);
+                SKSE::GetTaskInterface()->AddTask([node_ptr]() {
+                    {
+                        auto node = node_ptr.get();
+                        WalkRecalculateNormals(node);
                     }
-                }
-                if (refr->As<RE::Actor>()) {
-                    if (auto facenode = refr->GetFaceNodeSkinned()) {
-                        UpdateFaceModel(facenode);
-                        WalkRecalculateNormals(facenode);
-                    }
+                });
+                if (refr->As<RE::Actor>() && refr->IsPlayer()) {
+                    auto handle = refr->As<RE::Actor>()->GetHandle();
+                    SKSE::GetTaskInterface()->AddTask([handle]() {
+                        if (auto actor = handle.get()) {
+                            if (auto facenode = actor->GetFaceNode()) {
+                                UpdateFaceModel(facenode);
+                                WalkRecalculateNormals(facenode);
+                            }
+                            if (auto facenode = actor->GetFaceNodeSkinned()) {
+                                UpdateFaceModel(facenode);
+                                WalkRecalculateNormals(facenode);
+                            }
+                        }
+                    });
                 }
                 
             }
@@ -147,12 +164,6 @@ namespace plugin {
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
-                    ApplyMorphHookFaceNormalsDetour = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
-                        (uint64_t) skee64_info.lpBaseOfDll + 0x5f480);
-                    DetourTransactionBegin();
-                    DetourUpdateThread(GetCurrentThread());
-                    DetourAttach(&(PVOID &) ApplyMorphHookFaceNormalsDetour, &ApplyMorphHookFaceNormals);
-                    DetourTransactionCommit();
                     ApplyMorphsHookFaceNormalsDetour =
                         (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0x5f9e0);
                     DetourTransactionBegin();
