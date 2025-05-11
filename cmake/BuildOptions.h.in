@@ -1,0 +1,9 @@
+#pragma once
+
+#cmakedefine01 DETOURS_LIBRARY
+
+struct BuildOptions {
+    constexpr static bool detoursFound = static_cast<bool>(DETOURS_LIBRARY);
+};
+
+static inline constexpr BuildOptions buildOptions;

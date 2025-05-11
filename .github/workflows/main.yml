@@ -1,0 +1,52 @@
+name: Template
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+    inputs:
+      versionString:
+        description: 'Version String'
+        type: string
+env:
+  BUILD_TYPE: Release
+  PROJECT_NAME: Template
+  PROJECT_LONG_NAME: Template
+jobs:
+  build-skse:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with: 
+          submodules: recursive
+      - name: Get CMake
+        uses: lukka/get-cmake@v3.27.4
+        with:
+          cmakeVersion: "3.27.4"
+      - name: vcpkg cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: "b02e341c927f16d991edbd915d8ea43eac52096c"        
+      - name: Run CMake
+        uses: lukka/run-cmake@v10
+        with:
+          cmakeListsTxtPath: ${{ github.workspace }}/CMakeLists.txt
+          configurePreset: default
+          configurePresetAdditionalArgs: "['-DCMAKE_TOOLCHAIN_FILE:STRING=C:/vcpkg/scripts/buildsystems/vcpkg.cmake','-DCMAKE_POLICY_VERSION_MINIMUM=3.5']"
+          buildPreset: release
+          buildPresetAdditionalArgs: "['--config Release','-DCMAKE_POLICY_VERSION_MINIMUM=3.5']"
+      - name: Move binaries
+        run: |
+          cd ${{github.workspace}}/build/bin/release
+          mkdir artifacts
+          cd artifacts
+          mkdir SKSE
+          mkdir SKSE/Plugins
+          move ../Template.dll SKSE/Plugins
+          move ../Template.pdb SKSE/Plugins
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with: 
+          name: Template
+          path: build/bin/release/artifacts
+          retention-days: 90
