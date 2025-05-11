@@ -83,8 +83,8 @@ namespace plugin {
                 
                 uint64_t* skinInstPtr = (uint64_t*) &geo->GetGeometryRuntimeData().skinInstance;
                 uint64_t* skinPartPtr = (uint64_t*) &newSkinPartition;
-                UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
-                UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
+                UpdateSkinPartition_object[1] = (uint64_t) *skinPartPtr;
+                UpdateSkinPartition_object[2] = (uint64_t) *skinInstPtr;
                 UpdateSkinPartition_object[3] = 0x0;
                 UpdateSkinPartition_object[4] = 0x0;
                 UpdateSkinPartition_object[5] = 0x0;
