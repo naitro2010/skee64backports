@@ -96,6 +96,39 @@ namespace plugin {
             }
         }
     }
+
+    static void (*DoubleMorphCallbackDetour)(void *menu, float newValue,
+                                       uint32_t slider) = (void (*)(void *menu, float newValue, uint32_t slider)) 0x0;
+
+    static void DoubleMorphCallback(void *menu, float newValue, uint32_t slider) {
+        DoubleMorphCallbackDetour(menu, newValue, slider);
+        if (RE::PlayerCharacter::GetSingleton()) {
+            auto handle = RE::PlayerCharacter::GetSingleton()->GetHandle();
+            SKSE::GetTaskInterface()->AddTask([handle]() {
+                if (auto actor = handle.get()) {
+                    if (auto obj = actor->Get3D1(false)) {
+                        if (obj->AsNode()) {
+                            logger::info("Recalculating 3P");
+                            WalkRecalculateNormals(obj->AsNode());
+                        }
+                    }
+                    if (auto obj = actor->Get3D1(true)) {
+                        if (obj->AsNode()) {
+                            logger::info("Recalculating 1P");
+                            WalkRecalculateNormals(obj->AsNode());
+                        }
+                    }
+                    if (auto node = actor->GetFaceNode()) {
+                        UpdateFaceModel(node);
+                        logger::info("Recalculating Face");
+                        WalkRecalculateNormals(node);
+                    }
+                }
+            });
+        }
+    }
+
+
     class Update3DModelRecalc : public RE::BSTEventSink<SKSE::NiNodeUpdateEvent> {
             RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent *a_event,
                                                   RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
@@ -116,6 +149,7 @@ namespace plugin {
                                 }
                             }
                             if (auto node = actor->GetFaceNode()) {
+                                UpdateFaceModel(node);
                                 logger::info("Recalculating Face");
                                 WalkRecalculateNormals(node);
                             }
@@ -226,6 +260,13 @@ namespace plugin {
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
+                    DetourTransactionCommit();
+
+                    DoubleMorphCallbackDetour =
+                        (void (*)(void *menu, float newValue, uint32_t slider))((uint64_t) skee64_info.lpBaseOfDll + 0x3c810);
+                    DetourTransactionBegin();
+                    DetourUpdateThread(GetCurrentThread());
+                    DetourAttach(&(PVOID &) DoubleMorphCallbackDetour, &DoubleMorphCallback);
                     DetourTransactionCommit();
                     if (normalfix == nullptr) {
                         normalfix = new Update3DModelRecalc();
