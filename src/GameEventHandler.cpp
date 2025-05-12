@@ -19,6 +19,7 @@ namespace plugin {
     static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
                                                     RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
                                                                                        RE::BSFaceGenNiNode *)) 0x0;
+    std::atomic_uint32_t queued_recalculations = 0;
     static void WalkRecalculateNormals(RE::NiNode *node) {
         if (node == nullptr) {
             return;
@@ -108,27 +109,32 @@ namespace plugin {
         DoubleMorphCallbackDetour(menu, newValue, slider);
         if (RE::PlayerCharacter::GetSingleton()) {
             auto handle = RE::PlayerCharacter::GetSingleton()->GetHandle();
-            SKSE::GetTaskInterface()->AddTask([handle]() {
-                if (auto actor = handle.get()) {
-                    if (auto obj = actor->Get3D1(false)) {
-                        if (obj->AsNode()) {
-                            logger::info("Recalculating 3P");
-                            WalkRecalculateNormals(obj->AsNode());
+            if (queued_recalculations.fetch_add(1) < 5) {
+                SKSE::GetTaskInterface()->AddTask([handle]() {
+                    queued_recalculations.fetch_sub(1);
+                    if (auto actor = handle.get()) {
+                        if (auto obj = actor->Get3D1(false)) {
+                            if (obj->AsNode()) {
+                                logger::info("Recalculating 3P");
+                                WalkRecalculateNormals(obj->AsNode());
+                            }
+                        }
+                        if (auto obj = actor->Get3D1(true)) {
+                            if (obj->AsNode()) {
+                                logger::info("Recalculating 1P");
+                                WalkRecalculateNormals(obj->AsNode());
+                            }
+                        }
+                        if (auto node = actor->GetFaceNode()) {
+                            logger::info("Recalculating Face");
+                            UpdateFaceModel(node);
+                            WalkRecalculateNormals(node);
                         }
                     }
-                    if (auto obj = actor->Get3D1(true)) {
-                        if (obj->AsNode()) {
-                            logger::info("Recalculating 1P");
-                            WalkRecalculateNormals(obj->AsNode());
-                        }
-                    }
-                    if (auto node = actor->GetFaceNode()) {
-                        UpdateFaceModel(node);
-                        logger::info("Recalculating Face");
-                        WalkRecalculateNormals(node);
-                    }
-                }
-            });
+                });
+            } else {
+                queued_recalculations.fetch_sub(1);
+            }
         }
     }
 
@@ -138,34 +144,39 @@ namespace plugin {
                                                   RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
                 if (a_event && a_event->reference && a_event->reference->As<RE::Actor>()) {
                     auto handle = a_event->reference->As<RE::Actor>()->GetHandle();
-                    SKSE::GetTaskInterface()->AddTask([handle]() {
-                        if (auto actor = handle.get()) {
-                            if (auto obj = actor->Get3D1(false)) {
-                                if (obj->AsNode()) {
-                                    logger::info("Recalculating 3P");
-                                    WalkRecalculateNormals(obj->AsNode());
+                    if (queued_recalculations.fetch_add(1) < 5) {
+                        SKSE::GetTaskInterface()->AddTask([handle]() {
+                            queued_recalculations.fetch_sub(1);
+                            if (auto actor = handle.get()) {
+                                if (auto obj = actor->Get3D1(false)) {
+                                    if (obj->AsNode()) {
+                                        logger::info("Recalculating 3P");
+                                        WalkRecalculateNormals(obj->AsNode());
+                                    }
+                                }
+                                if (auto obj = actor->Get3D1(true)) {
+                                    if (obj->AsNode()) {
+                                        logger::info("Recalculating 1P");
+                                        WalkRecalculateNormals(obj->AsNode());
+                                    }
+                                }
+                                if (auto node = actor->GetFaceNode()) {
+                                    logger::info("Recalculating Face");
+                                    UpdateFaceModel(node);
+                                    WalkRecalculateNormals(node);
                                 }
                             }
-                            if (auto obj = actor->Get3D1(true)) {
-                                if (obj->AsNode()) {
-                                    logger::info("Recalculating 1P");
-                                    WalkRecalculateNormals(obj->AsNode());
-                                }
-                            }
-                            if (auto node = actor->GetFaceNode()) {
-                                UpdateFaceModel(node);
-                                logger::info("Recalculating Face");
-                                WalkRecalculateNormals(node);
-                            }
-                        }
-                    });
+                        });
+                    } else {
+                        queued_recalculations.fetch_sub(1);
+                    }
                     
                 }
                 return RE::BSEventNotifyControl::kContinue;
             }
     };
     Update3DModelRecalc *normalfix = nullptr; 
-
+    
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
         ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         
