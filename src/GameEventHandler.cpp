@@ -15,6 +15,10 @@ namespace plugin {
 
 #undef GetObject
     static uint64_t NIOVTaskUpdateSkinPartitionvtable = 0x0;
+    static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
+    static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
+                                                    RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
+                                                                                       RE::BSFaceGenNiNode *)) 0x0;
     static void WalkRecalculateNormals(RE::NiNode *node) {
         if (node == nullptr) {
             return;
@@ -161,10 +165,7 @@ namespace plugin {
             }
     };
     Update3DModelRecalc *normalfix = nullptr; 
-    static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
-    static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
-                                                    RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
-                                                                                       RE::BSFaceGenNiNode *)) 0x0;
+
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
         ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         
