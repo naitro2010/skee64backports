@@ -12,6 +12,7 @@
 #include "detours/detours.h"
 #include "Morpher.h"
 namespace plugin {
+
 #undef GetObject
     static uint64_t NIOVTaskUpdateSkinPartitionvtable = 0x0;
     static void WalkRecalculateNormals(RE::NiNode *node) {
@@ -90,11 +91,42 @@ namespace plugin {
                 UpdateSkinPartition_object[5] = 0x0;
                 auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
                 RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
-                logger::info("Recalc10");
+               // logger::info("Recalc10");
                 free(UpdateSkinPartition_object);
             }
         }
     }
+    class Update3DModelRecalc : public RE::BSTEventSink<SKSE::NiNodeUpdateEvent> {
+            RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent *a_event,
+                                                  RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
+                if (a_event && a_event->reference && a_event->reference->As<RE::Actor>()) {
+                    auto handle = a_event->reference->As<RE::Actor>()->GetHandle();
+                    SKSE::GetTaskInterface()->AddTask([handle]() {
+                        if (auto actor = handle.get()) {
+                            if (auto obj = actor->Get3D1(false)) {
+                                if (obj->AsNode()) {
+                                    logger::info("Recalculating 3P");
+                                    WalkRecalculateNormals(obj->AsNode());
+                                }
+                            }
+                            if (auto obj = actor->Get3D1(true)) {
+                                if (obj->AsNode()) {
+                                    logger::info("Recalculating 1P");
+                                    WalkRecalculateNormals(obj->AsNode());
+                                }
+                            }
+                            if (auto node = actor->GetFaceNode()) {
+                                logger::info("Recalculating Face");
+                                WalkRecalculateNormals(node);
+                            }
+                        }
+                    });
+                    
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+    };
+    Update3DModelRecalc *normalfix = nullptr; 
     static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
     static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
                                                     RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
@@ -108,7 +140,7 @@ namespace plugin {
             SKSE::GetTaskInterface()->AddTask([node_ptr]() {
                 auto node = node_ptr.get();
                 {
-                    logger::info("Recalc Caller 1");
+                    //logger::info("Recalc Caller 1");
                     UpdateFaceModel(node);
                     WalkRecalculateNormals(node);
                 }
@@ -147,12 +179,12 @@ namespace plugin {
                     SKSE::GetTaskInterface()->AddTask([handle]() {
                         if (auto actor = handle.get()) {
                             if (auto facenode = actor->GetFaceNode()) {
-                                logger::info("Recalc Caller 2");
+                               // logger::info("Recalc Caller 2");
                                 UpdateFaceModel(facenode);
                                 WalkRecalculateNormals(facenode);
                             }
                             if (auto facenode = actor->GetFaceNodeSkinned()) {
-                                logger::info("Recalc Caller 3");
+                                //logger::info("Recalc Caller 3");
                                 UpdateFaceModel(facenode);
                                 WalkRecalculateNormals(facenode);
                             }
@@ -195,7 +227,10 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
-                    
+                    if (normalfix == nullptr) {
+                        normalfix = new Update3DModelRecalc();
+                        SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(normalfix);
+                    }
                     logger::info("SKEE64 1597 normal recaclulation backported");
                 }
             }
