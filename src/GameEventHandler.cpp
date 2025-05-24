@@ -24,8 +24,11 @@ namespace plugin {
     std::recursive_mutex actor_queued_recalc_mutex;
     std::map<RE::FormID, std::atomic_uint32_t> actor_queued_morphs;
     std::map<std::pair<RE::FormID,RE::NiNode*>, std::atomic_uint32_t> actor_queued_morphs2;
-    std::map<RE::FormID, std::chrono::time_point<std::chrono::steady_clock>> actor_morph_update_times;
     std::map<std::pair<RE::FormID, RE::NiNode *>, std::chrono::time_point<std::chrono::steady_clock>> actor_morph_apply_times;
+    std::map<RE::FormID, std::chrono::time_point<std::chrono::steady_clock>> actor_morph_update_times;
+    std::map<std::pair<RE::FormID, RE::NiNode *>, std::atomic_uint32_t> actorbase_queued_facemorphs;
+    std::recursive_mutex actor_queued_facemorphs_mutex;
+    std::map<std::pair<RE::FormID, RE::NiNode *>, std::chrono::time_point<std::chrono::steady_clock>> actorbase_facemorphs_apply_times;
     std::recursive_mutex actor_queued_morphs_mutex;
     std::atomic_uint32_t queued_recalculations = 0;
     static long long morph_delay = 500;
@@ -199,21 +202,66 @@ namespace plugin {
             }
     };
     Update3DModelRecalc *normalfix = nullptr;
-
+    /*
+    std::map<std::pair<RE::FormID, RE::NiNode *>, std::atomic_uint32_t> actorbase_queued_facemorphs;
+    std::recursive_mutex actor_queued_facemorphs_mutex;
+    std::map<std::pair<RE::FormID, RE::NiNode *>, std::chrono::time_point<std::chrono::steady_clock>> actorbase_facemorphs_apply_times;
+    */
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
-        ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
-
-        if (node) {
-            RE::NiPointer<RE::BSFaceGenNiNode> node_ptr(node);
-
-            SKSE::GetTaskInterface()->AddTask([node_ptr]() {
-                auto node = node_ptr.get();
-                {
-                    //logger::info("Recalc Caller 1");
-                    UpdateFaceModel(node);
-                    WalkRecalculateNormals(node);
+        bool do_facemorphs = false;
+        if (base && node) {
+            RE::FormID FID = base->formID;
+            std::pair refr_node(FID, (RE::NiNode*)node);
+            auto next_time = std::chrono::steady_clock::now();
+            { 
+                std::lock_guard<std::recursive_mutex> l(actor_queued_facemorphs_mutex);
+                if (!actorbase_queued_facemorphs.contains(refr_node)) {
+                    actorbase_queued_facemorphs.insert_or_assign(refr_node, 0);
                 }
-            });
+                if (!actorbase_facemorphs_apply_times.contains(refr_node)) {
+                    actorbase_facemorphs_apply_times.insert_or_assign(refr_node, next_time);
+                }
+                if (actorbase_queued_facemorphs[refr_node].fetch_add(1) < 2) {
+                    do_facemorphs = true;
+                } else {
+                    actorbase_queued_facemorphs[refr_node].fetch_sub(1);
+                }
+            }
+            
+        
+            if (do_facemorphs == true) {
+
+                RE::NiPointer<RE::BSFaceGenNiNode> node_ptr(node);
+                std::thread([morphInterface, base, node_ptr, refr_node]() {
+                    auto next_time = std::chrono::steady_clock::now();
+                    {
+                        std::lock_guard<std::recursive_mutex> l(actor_queued_facemorphs_mutex);
+                        next_time = actorbase_facemorphs_apply_times[refr_node];
+                    }
+                    std::this_thread::sleep_until(next_time);
+                    SKSE::GetTaskInterface()->AddTask([morphInterface,base,node_ptr,refr_node]() {
+                        actorbase_queued_facemorphs[refr_node].fetch_sub(1);
+                        {
+                            std::lock_guard<std::recursive_mutex> l(actor_queued_facemorphs_mutex);
+                            actorbase_facemorphs_apply_times[refr_node] = std::chrono::steady_clock::now();
+                        }
+                        if (node_ptr.get() != nullptr) {
+                    
+                            ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node_ptr.get());
+
+                
+                            auto node = node_ptr.get();
+                            {
+                                //logger::info("Recalc Caller 1");
+                                UpdateFaceModel(node);
+                                WalkRecalculateNormals(node);
+                            }
+                        }
+                    });
+                }).detach();
+                
+            
+            }
         }
     }
     /*
