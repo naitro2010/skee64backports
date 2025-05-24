@@ -1,4 +1,4 @@
-#pragma warning(disable : 4100 4189 4244)
+#pragma warning(disable : 4100 4189 4244 4505)
 #include "GameEventHandler.h"
 #include "RE/N/NiSmartPointer.h"
 #include "REL/Relocation.h"
@@ -536,14 +536,14 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) UpdateMorphsHookBodyDetour, UpdateMorphsHookBody);
                     DetourTransactionCommit();
-
+                    /*
                     UpdateMorphsHookBodyDetour2 =
                         (void (*)(void *, RE::TESObjectREFR *, bool))((uint64_t) skee64_info.lpBaseOfDll + 0x6860);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) UpdateMorphsHookBodyDetour2, UpdateMorphsHookBody2);
                     DetourTransactionCommit();
-
+                    */
                     DoubleMorphCallbackDetour =
                         (void (*)(void *menu, float newValue, uint32_t slider))((uint64_t) skee64_info.lpBaseOfDll + 0x8ae10);
                     DetourTransactionBegin();
