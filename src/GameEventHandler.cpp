@@ -84,11 +84,11 @@ namespace plugin {
     static auto OriginalFaceApplyMorph =
         (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
     typedef struct {
-            RE::NiNode *fg_parent_node;
-            uint32_t parent_index;
+            RE::NiNode *fg_node;
             RE::TESNPC *npc;
             float relative;
             std::string morphName;
+            RE::ActorHandle handle;
     } FaceMorphData;
     std::map<std::tuple<RE::NiNode*,RE::TESNPC*,std::string>,FaceMorphData> queued_morphs;
     static void FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode* fg_node, RE::TESNPC *npc, RE::BSFixedString *morphName,
@@ -96,14 +96,15 @@ namespace plugin {
         if (morphName) {
             if (fg_node) {
                 if (npc) {
+                    RE::ActorHandle handle = fg_node->GetRuntimeData().unk15C;
                     std::lock_guard<std::recursive_mutex> l(queued_morphs_mutex);
                     if (!queued_morphs.contains(std::make_tuple(fg_node, npc, std::string(morphName->c_str())))) {
-                        relative += queued_morphs[std::make_tuple(fg_node->parent, npc, std::string(morphName->c_str()))].relative;
-                        fg_node->parent->IncRefCount();
+                        relative += queued_morphs[std::make_tuple(fg_node, npc, std::string(morphName->c_str()))]
+                                .relative;
                     }
                     
-                    queued_morphs.insert_or_assign(std::make_tuple(fg_node->parent, npc, std::string(morphName->c_str())),
-                                                   FaceMorphData(fg_node->parent,fg_node->parentIndex, npc, relative, std::string(morphName->c_str())));
+                    queued_morphs.insert_or_assign(std::make_tuple(fg_node, npc, std::string(morphName->c_str())),
+                                                   FaceMorphData(fg_node, npc, relative, std::string(morphName->c_str()),handle));
                     if (multi_morph_tasks_scheduled == 0) {
                         multi_morph_tasks_scheduled += 1;
                         std::thread t([] {
@@ -115,17 +116,15 @@ namespace plugin {
                                     copy_queued_morphs(queued_morphs);
                                 queued_morphs.clear();
                                 for (auto p : copy_queued_morphs) {
-                                    if (p.second.fg_parent_node->GetRefCount() > 1) {
-                                        RE::BSFixedString morphName(p.second.morphName);
-                                        auto &objects = p.second.fg_parent_node->GetChildren();
-                                        if (objects.size() > p.second.parent_index) {
-                                            OriginalFaceApplyMorph(RE::BSFaceGenManager::GetSingleton(),
-                                                                   (RE::BSFaceGenNiNode *) objects[p.second.parent_index].get(),
-                                                                   p.second.npc, &morphName, p.second.relative);
+                                    if (auto actor = p.second.handle.get()) {
+                                        if (actor->Is3DLoaded()) {
+                                            RE::BSFixedString morphName(p.second.morphName);
+                                            if (actor->GetFaceNodeSkinned() == p.second.fg_node) {
+                                                OriginalFaceApplyMorph(RE::BSFaceGenManager::GetSingleton(),
+                                                                       (RE::BSFaceGenNiNode *) p.second.fg_node, p.second.npc, &morphName,
+                                                                       p.second.relative);
+                                            }
                                         }
-                                    }
-                                    if (p.second.fg_parent_node->GetRefCount() > 0) {
-                                        p.second.fg_parent_node->DecRefCount();
                                     }
                                 }
                             });
@@ -145,8 +144,8 @@ namespace plugin {
                                                     RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
                                                                                        RE::BSFaceGenNiNode *)) 0x0;
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
+        ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         if (node) {
-            ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
             UpdateFaceModel(node);
             WalkRecalculateNormals(node);
         }
@@ -155,8 +154,8 @@ namespace plugin {
                                                    RE::BSFaceGenNiNode *) = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
                                                                                       RE::BSFaceGenNiNode *)) 0x0;
     static void ApplyMorphHookFaceNormals(void *morphInterface, RE::TESNPC *npc, RE::BGSHeadPart *part, RE::BSFaceGenNiNode *node) {
+        ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
         if (node) {
-            ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
             UpdateFaceModel(node);
             WalkRecalculateNormals(node);
         }
@@ -165,9 +164,9 @@ namespace plugin {
                                                     bool defer) = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
                                                                             bool defer)) 0x0;
     static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, RE::NiNode *node, bool isAttaching, bool defer) {
+        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
         if (node) {
             if (node->AsNode()) {
-                ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
                 WalkRecalculateNormals(node);
                 if (refr->As<RE::Actor>()) {
                     if (auto facenode = refr->GetFaceNode()) {
