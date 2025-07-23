@@ -98,7 +98,7 @@ namespace plugin {
                 if (npc) {
                     RE::ActorHandle handle = fg_node->GetRuntimeData().unk15C;
                     std::lock_guard<std::recursive_mutex> l(queued_morphs_mutex);
-                    if (!queued_morphs.contains(std::make_tuple(fg_node, npc, std::string(morphName->c_str())))) {
+                    if (queued_morphs.contains(std::make_tuple(fg_node, npc, std::string(morphName->c_str())))) {
                         relative += queued_morphs[std::make_tuple(fg_node, npc, std::string(morphName->c_str()))]
                                 .relative;
                     }
@@ -119,7 +119,8 @@ namespace plugin {
                                     if (auto actor = p.second.handle.get()) {
                                         if (actor->Is3DLoaded()) {
                                             RE::BSFixedString morphName(p.second.morphName);
-                                            if (actor->GetFaceNodeSkinned() == p.second.fg_node) {
+                                            if (actor->GetFaceNodeSkinned() == p.second.fg_node ||
+                                                actor->GetFaceNode() == p.second.fg_node) {
                                                 OriginalFaceApplyMorph(RE::BSFaceGenManager::GetSingleton(),
                                                                        (RE::BSFaceGenNiNode *) p.second.fg_node, p.second.npc, &morphName,
                                                                        p.second.relative);
