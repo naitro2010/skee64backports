@@ -72,10 +72,10 @@ namespace plugin {
                 uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
                 UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
 
-                uint64_t *skinInstPtr = (uint64_t *) &geo->GetGeometryRuntimeData().skinInstance;
-                uint64_t *skinPartPtr = (uint64_t *) &newSkinPartition;
-                UpdateSkinPartition_object[1] = (uint64_t) *skinPartPtr;
-                UpdateSkinPartition_object[2] = (uint64_t) *skinInstPtr;
+                uint64_t *skinInstPtr = (uint64_t *) geo->GetGeometryRuntimeData().skinInstance.get();
+                uint64_t *skinPartPtr = (uint64_t *) newSkinPartition.get();
+                UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
+                UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
                 auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
                 RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
             }
@@ -107,7 +107,7 @@ namespace plugin {
                     if (multi_morph_tasks_scheduled == 0) {
                         multi_morph_tasks_scheduled += 1;
                         std::thread t([] {
-                            std::this_thread::sleep_for(std::chrono::milliseconds(350));
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
                             SKSE::GetTaskInterface()->AddTask([]() {
                                 std::lock_guard<std::recursive_mutex> l(queued_morphs_mutex);
                                 multi_morph_tasks_scheduled = 0;
@@ -133,6 +133,7 @@ namespace plugin {
                                         }
                                     }
                                 }
+
                                 for (auto &ah: updated_actors) {
                                     if (auto actor = ah->get()) {
                                         if (actor->Is3DLoaded()) {
