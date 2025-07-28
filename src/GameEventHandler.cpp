@@ -72,8 +72,8 @@ namespace plugin {
                 uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
                 UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
 
-                uint64_t *skinInstPtr = (uint64_t *) geo->GetGeometryRuntimeData().skinInstance.get();
-                uint64_t *skinPartPtr = (uint64_t *) newSkinPartition.get();
+                uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
+                uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
                 UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
                 UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
                 auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
@@ -81,6 +81,7 @@ namespace plugin {
             }
         }
     }
+    static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
     static auto OriginalFaceApplyMorph =
         (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
     typedef struct {
@@ -140,9 +141,6 @@ namespace plugin {
                                             if (auto node = actor->GetFaceNode()) {
                                                 WalkRecalculateNormals(node);
                                             }
-                                            if (auto node = actor->GetFaceNodeSkinned()) {
-                                                WalkRecalculateNormals(node);
-                                            }
                                         }
                                         
                                     }
@@ -157,14 +155,21 @@ namespace plugin {
         }
         OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
     }
-    static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
+
     static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
                                                     RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
                                                                                        RE::BSFaceGenNiNode *)) 0x0;
     static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
         ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         if (node) {
-            WalkRecalculateNormals(node);
+            if (auto actor = node->GetRuntimeData().unk15C.get()) {
+                if (actor->Is3DLoaded()) {
+                    if (auto facenode = actor->GetFaceNode()) {
+                        UpdateFaceModel(facenode);
+                        WalkRecalculateNormals(facenode);
+                    }
+                }
+            }
         }
     }
     static void (*ApplyMorphHookFaceNormalsDetour)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
@@ -173,7 +178,14 @@ namespace plugin {
     static void ApplyMorphHookFaceNormals(void *morphInterface, RE::TESNPC *npc, RE::BGSHeadPart *part, RE::BSFaceGenNiNode *node) {
         ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
         if (node) {
-            WalkRecalculateNormals(node);
+            if (auto actor = node->GetRuntimeData().unk15C.get()) {
+                if (actor->Is3DLoaded()) {
+                    if (auto facenode = actor->GetFaceNode()) {
+                        UpdateFaceModel(facenode);
+                        WalkRecalculateNormals(facenode);
+                    }
+                }
+            }
         }
     }
     static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
@@ -186,15 +198,12 @@ namespace plugin {
                 WalkRecalculateNormals(node);
                 if (refr->As<RE::Actor>()) {
                     if (auto facenode = refr->GetFaceNode()) {
-                        WalkRecalculateNormals(facenode);
-                    }
-                }
-                if (refr->As<RE::Actor>()) {
-                    if (auto facenode = refr->GetFaceNodeSkinned()) {
+                        UpdateFaceModel(facenode);
                         WalkRecalculateNormals(facenode);
                     }
                 }
             }
+            WalkRecalculateNormals(node);
         }
     }
     void GameEventHandler::onLoad() {
