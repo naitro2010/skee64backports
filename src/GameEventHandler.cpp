@@ -138,7 +138,8 @@ namespace plugin {
                                 for (auto &ah: updated_actors) {
                                     if (auto actor = ah->get()) {
                                         if (actor->Is3DLoaded()) {
-                                            if (auto node = actor->GetFaceNode()) {
+                                            if (auto node = actor->GetFaceNodeSkinned()) {
+                                                UpdateFaceModel(node);
                                                 WalkRecalculateNormals(node);
                                             }
                                         }
@@ -164,12 +165,13 @@ namespace plugin {
         if (node) {
             if (auto actor = node->GetRuntimeData().unk15C.get()) {
                 if (actor->Is3DLoaded()) {
-                    if (auto facenode = actor->GetFaceNode()) {
+                    if (auto facenode = actor->GetFaceNodeSkinned()) {
                         UpdateFaceModel(facenode);
                         WalkRecalculateNormals(facenode);
                     }
                 }
             }
+            WalkRecalculateNormals(node);
         }
     }
     static void (*ApplyMorphHookFaceNormalsDetour)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
@@ -180,12 +182,13 @@ namespace plugin {
         if (node) {
             if (auto actor = node->GetRuntimeData().unk15C.get()) {
                 if (actor->Is3DLoaded()) {
-                    if (auto facenode = actor->GetFaceNode()) {
+                    if (auto facenode = actor->GetFaceNodeSkinned()) {
                         UpdateFaceModel(facenode);
                         WalkRecalculateNormals(facenode);
                     }
                 }
             }
+            WalkRecalculateNormals(node);
         }
     }
     static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
@@ -196,10 +199,12 @@ namespace plugin {
         if (node) {
             if (node->AsNode()) {
                 WalkRecalculateNormals(node);
-                if (refr->As<RE::Actor>()) {
-                    if (auto facenode = refr->GetFaceNode()) {
-                        UpdateFaceModel(facenode);
-                        WalkRecalculateNormals(facenode);
+                if (auto actor = refr->As<RE::Actor>()) {
+                    if (actor->Is3DLoaded()) {
+                        if (auto facenode = actor->GetFaceNodeSkinned()) {
+                            UpdateFaceModel(facenode);
+                            WalkRecalculateNormals(facenode);
+                        }
                     }
                 }
             }
