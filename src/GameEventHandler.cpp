@@ -265,6 +265,12 @@ namespace plugin {
                            sizeof(signature1170)) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x435c50).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x1d4c60;
+                    ApplyMorphHookFaceNormalsDetour = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
+                        (uint64_t) skee64_info.lpBaseOfDll + 0xb9480);
+                    DetourTransactionBegin();
+                    DetourUpdateThread(GetCurrentThread());
+                    DetourAttach(&(PVOID &) ApplyMorphHookFaceNormalsDetour, &ApplyMorphHookFaceNormals);
+                    DetourTransactionCommit();                    
                     ApplyMorphsHookFaceNormalsDetour =
                         (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0xb9a40);
                     DetourTransactionBegin();
