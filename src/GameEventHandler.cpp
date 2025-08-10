@@ -138,7 +138,7 @@ namespace plugin {
                                 for (auto &ah: updated_actors) {
                                     if (auto actor = ah->get()) {
                                         if (actor->Is3DLoaded()) {
-                                            if (auto node = actor->GetFaceNodeSkinned()) {
+                                            if (auto node = actor->GetFaceNode())) {
                                                 UpdateFaceModel(node);
                                                 WalkRecalculateNormals(node);
                                             }
@@ -165,7 +165,7 @@ namespace plugin {
         if (node) {
             if (auto actor = node->GetRuntimeData().unk15C.get()) {
                 if (actor->Is3DLoaded()) {
-                    if (auto facenode = actor->GetFaceNodeSkinned()) {
+                    if (auto facenode = actor->GetFaceNode()) {
                         UpdateFaceModel(facenode);
                         WalkRecalculateNormals(facenode);
                     }
@@ -182,7 +182,7 @@ namespace plugin {
         if (node) {
             if (auto actor = node->GetRuntimeData().unk15C.get()) {
                 if (actor->Is3DLoaded()) {
-                    if (auto facenode = actor->GetFaceNodeSkinned()) {
+                    if (auto facenode = actor->GetFaceNode()) {
                         UpdateFaceModel(facenode);
                         WalkRecalculateNormals(facenode);
                     }
@@ -201,7 +201,7 @@ namespace plugin {
                 WalkRecalculateNormals(node);
                 if (auto actor = refr->As<RE::Actor>()) {
                     if (actor->Is3DLoaded()) {
-                        if (auto facenode = actor->GetFaceNodeSkinned()) {
+                        if (auto facenode = actor->GetFaceNode()) {
                             UpdateFaceModel(facenode);
                             WalkRecalculateNormals(facenode);
                         }
