@@ -28,7 +28,7 @@ namespace plugin {
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<uint32_t, RE::ActorHandle> queued_recalcs;
     
-    static void WalkRecalculateNormals(RE::NiNode *node) {
+    static void WalkRecalculateNormals(RE::NiNode *node, std::recursive_mutex& thread_mutex, std::vector<std::thread>& spawned_threads) {
         if (node == nullptr) {
             return;
         }
@@ -37,7 +37,7 @@ namespace plugin {
                 continue;
             }
             if (auto c_node = obj->AsNode()) {
-                WalkRecalculateNormals(c_node);
+                WalkRecalculateNormals(c_node,thread_mutex,spawned_threads);
             }
             if (auto geo = obj->AsGeometry()) {
                 if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
@@ -61,35 +61,41 @@ namespace plugin {
                 if (!material) {
                     continue;
                 }
-                RE::NiPointer<RE::NiObject> newPartition = nullptr;
-                geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
-                if (!newPartition) {
-                    continue;
-                }
-                RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
-                    RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
-                if (newSkinPartition->partitions.size() == 0) {
-                    newSkinPartition->DecRefCount();
-                    continue;
-                }
                 {
-                    NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
-                    applicator.Apply();
-                }
-                for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
-                    auto &pPartition = newSkinPartition->partitions[p];
-                    memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
-                           newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
-                }
-                uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-                UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
+                    std::lock_guard<std::recursive_mutex> l(thread_mutex);
+                    spawned_threads.push_back(std::thread([=]() {
+                        RE::NiPointer<RE::NiObject> newPartition = nullptr;
+                        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
+                        if (!newPartition) {
+                            return;
+                        }
+                        RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
+                            RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
+                        if (newSkinPartition->partitions.size() == 0) {
+                            newSkinPartition->DecRefCount();
+                            return;
+                        }
+                        {
+                            NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
+                            applicator.Apply();
+                        }
+                        for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
+                            auto &pPartition = newSkinPartition->partitions[p];
+                            memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
+                                   newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+                        }
+                        uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                        UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
 
-                uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
-                uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
-                UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
-                UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
-                auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
-                RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
+                        uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
+                        uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
+                        UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
+                        UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
+                        auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
+                        RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
+                    }));
+
+                }
             }
         }
     }
@@ -118,22 +124,28 @@ namespace plugin {
                     std::vector<std::thread> spawned_threads;
                     for (auto p: temp_recalcs) {
                         spawned_threads.push_back(std::thread([hp = p]() {
+                            std::recursive_mutex thread_mutex;
+                            std::vector<std::thread> spawned_threads_recalc;
                             auto actor = hp.second.get();
                             if (actor->Is3DLoaded()) {
                                 if (auto obj = actor->Get3D1(true)) {
                                     if (auto node = obj->AsNode()) {
-                                        WalkRecalculateNormals(node);
+                                        
+                                        WalkRecalculateNormals(node,thread_mutex,spawned_threads_recalc);
                                     }
                                 }
                                 if (auto obj = actor->Get3D1(false)) {
                                     if (auto node = obj->AsNode()) {
-                                        WalkRecalculateNormals(node);
+                                        WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
                                     }
                                 }
                                 if (auto facenode = actor->GetFaceNode()) {
                                     UpdateFaceModel(facenode);
-                                    WalkRecalculateNormals(facenode);
+                                    WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
                                 }
+                            }
+                            for (auto &t : spawned_threads_recalc) {
+                                t.join();
                             }
                             actor->DecRefCount();
                         }));
@@ -222,7 +234,6 @@ namespace plugin {
                     AddActorToRecalculate(actor.get());
                 }
             }
-            WalkRecalculateNormals(node);
         }
     }
     static void (*ApplyMorphHookFaceNormalsDetour)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
@@ -236,7 +247,6 @@ namespace plugin {
                     AddActorToRecalculate(actor.get());
                 }
             }
-            WalkRecalculateNormals(node);
         }
     }
     static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
@@ -246,14 +256,12 @@ namespace plugin {
         ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
         if (node) {
             if (node->AsNode()) {
-                WalkRecalculateNormals(node);
                 if (auto actor = refr->As<RE::Actor>()) {
                     if (actor->Is3DLoaded()) {
                         AddActorToRecalculate(actor);
                     }
                 }
             }
-            WalkRecalculateNormals(node);
         }
     }
     void GameEventHandler::onLoad() {
