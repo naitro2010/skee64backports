@@ -18,6 +18,15 @@ namespace plugin {
     static uint32_t recalculate_tasks_scheduled = 0;
     static std::recursive_mutex queued_recalcs_mutex;
     static std::recursive_mutex queued_morphs_mutex;
+    typedef struct {
+            RE::NiNode *fg_node;
+            RE::TESNPC *npc;
+            float relative;
+            std::string morphName;
+            RE::ActorHandle handle;
+    } FaceMorphData;
+    std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
+    std::unordered_map<uint32_t, RE::ActorHandle> queued_recalcs;
     
     static void WalkRecalculateNormals(RE::NiNode *node) {
         if (node == nullptr) {
@@ -84,18 +93,59 @@ namespace plugin {
             }
         }
     }
+
     static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
+    static void AddActorToRecalculate(RE::Actor *actor) {
+        actor->IncRefCount();
+        auto handle = actor->GetHandle();
+        std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
+        auto original_size = queued_recalcs.size();
+        if (queued_recalcs.contains(handle.native_handle())) {
+            actor->DecRefCount();
+        } else {
+            queued_recalcs.insert_or_assign(handle.native_handle(), handle);
+        }
+        if (original_size == 0) {
+            std::thread t([]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(350));
+                SKSE::GetTaskInterface()->AddTask([]() {
+                    std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
+                    auto temp_recalcs = std::unordered_map(queued_recalcs);
+                    queued_recalcs.clear();
+                    std::vector<std::thread> spawned_threads;
+                    for (auto p: temp_recalcs) {
+                        spawned_threads.push_back(std::thread([hp = p]() {
+                            auto actor = hp.second.get();
+                            if (actor->Is3DLoaded()) {
+                                if (auto obj = actor->Get3D1(true)) {
+                                    if (auto node = obj->AsNode()) {
+                                        WalkRecalculateNormals(node);
+                                    }
+                                }
+                                if (auto obj = actor->Get3D1(false)) {
+                                    if (auto node = obj->AsNode()) {
+                                        WalkRecalculateNormals(node);
+                                    }
+                                }
+                                if (auto facenode = actor->GetFaceNode()) {
+                                    UpdateFaceModel(facenode);
+                                    WalkRecalculateNormals(facenode);
+                                }
+                            }
+                            actor->DecRefCount();
+                        }));
+                    }
+                    for (auto &t: spawned_threads) {
+                        t.join();
+                    }
+                });
+            });
+            t.detach();
+        }
+    }
     static auto OriginalFaceApplyMorph =
         (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
-    typedef struct {
-            RE::NiNode *fg_node;
-            RE::TESNPC *npc;
-            float relative;
-            std::string morphName;
-            RE::ActorHandle handle;
-    } FaceMorphData;
-    std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
-    std::unordered_map<uint32_t,RE::ActorHandle> queued_recalcs;
+    
     static void FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc, RE::BSFixedString *morphName,
                                    float relative) {
         if (morphName) {
@@ -142,20 +192,7 @@ namespace plugin {
                                 for (auto &ah: updated_actors) {
                                     if (auto actor = ah.get()) {
                                         if (actor->Is3DLoaded()) {
-                                            if (auto obj = actor->Get3D1(true)) {
-                                                if (auto node = obj->AsNode()) {
-                                                    WalkRecalculateNormals(node);
-                                                }
-                                            }
-                                            if (auto obj = actor->Get3D1(false)) {
-                                                if (auto node = obj->AsNode()) {
-                                                    WalkRecalculateNormals(node);
-                                                }
-                                            }
-                                            if (auto facenode = actor->GetFaceNode()) {
-                                                UpdateFaceModel(facenode);
-                                                WalkRecalculateNormals(facenode);
-                                            }
+                                            AddActorToRecalculate(actor.get());
                                         }
                                         
                                     }
@@ -179,10 +216,7 @@ namespace plugin {
         if (node) {
             if (auto actor = node->GetRuntimeData().unk15C.get()) {
                 if (actor->Is3DLoaded()) {
-                    if (auto facenode = actor->GetFaceNode()) {
-                        UpdateFaceModel(facenode);
-                        WalkRecalculateNormals(facenode);
-                    }
+                    AddActorToRecalculate(actor.get());
                 }
             }
             WalkRecalculateNormals(node);
@@ -196,10 +230,7 @@ namespace plugin {
         if (node) {
             if (auto actor = node->GetRuntimeData().unk15C.get()) {
                 if (actor->Is3DLoaded()) {
-                    if (auto facenode = actor->GetFaceNode()) {
-                        UpdateFaceModel(facenode);
-                        WalkRecalculateNormals(facenode);
-                    }
+                    AddActorToRecalculate(actor.get());
                 }
             }
             WalkRecalculateNormals(node);
@@ -215,10 +246,7 @@ namespace plugin {
                 WalkRecalculateNormals(node);
                 if (auto actor = refr->As<RE::Actor>()) {
                     if (actor->Is3DLoaded()) {
-                        if (auto facenode = actor->GetFaceNode()) {
-                            UpdateFaceModel(facenode);
-                            WalkRecalculateNormals(facenode);
-                        }
+                        AddActorToRecalculate(actor);
                     }
                 }
             }
@@ -238,51 +266,7 @@ namespace plugin {
                                                   RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
                 if (a_event && a_event->reference && a_event->reference->Is3DLoaded()) {
                     if (auto actor=a_event->reference->As<RE::Actor>()) {
-                        actor->IncRefCount();
-                        auto handle=actor->GetHandle();
-                        std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
-                        auto original_size = queued_recalcs.size();
-                        if (queued_recalcs.contains(handle.native_handle())) {
-                            actor->DecRefCount();    
-                        } else {
-                            queued_recalcs.insert_or_assign(handle.native_handle(),handle);
-                        }
-                        if (original_size == 0) {
-                            std::thread t([]() {
-                                std::this_thread::sleep_for(std::chrono::milliseconds(350));
-                                SKSE::GetTaskInterface()->AddTask([]() {
-                                    std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
-                                    auto temp_recalcs = std::unordered_map(queued_recalcs);
-                                    std::vector<std::thread> spawned_threads;
-                                    for (auto p: temp_recalcs) {
-                                        spawned_threads.push_back(std::thread([hp=p]() {
-                                            auto actor = hp.second.get();
-                                            if (actor->Is3DLoaded()) {
-                                                if (auto obj = actor->Get3D1(true)) {
-                                                    if (auto node = obj->AsNode()) {
-                                                        WalkRecalculateNormals(node);
-                                                    }
-                                                }
-                                                if (auto obj = actor->Get3D1(false)) {
-                                                    if (auto node = obj->AsNode()) {
-                                                        WalkRecalculateNormals(node);
-                                                    }
-                                                }
-                                                if (auto facenode = actor->GetFaceNode()) {
-                                                    UpdateFaceModel(facenode);
-                                                    WalkRecalculateNormals(facenode);
-                                                }
-                                            }
-                                            actor->DecRefCount();
-                                        }));
-                                    }
-                                    for (auto &t: spawned_threads) {
-                                        t.join();
-                                    }
-                                });
-                            });
-                            t.detach();
-                        }
+                        
                     }
                 }
                 
