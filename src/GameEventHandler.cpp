@@ -109,9 +109,12 @@ namespace plugin {
             std::thread t([]() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(350));
                 SKSE::GetTaskInterface()->AddTask([]() {
-                    std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
-                    auto temp_recalcs = std::unordered_map(queued_recalcs);
-                    queued_recalcs.clear();
+                    std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
+                    {
+                        std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
+                        temp_recalcs=std::unordered_map(queued_recalcs);
+                        queued_recalcs.clear();
+                    }
                     std::vector<std::thread> spawned_threads;
                     for (auto p: temp_recalcs) {
                         spawned_threads.push_back(std::thread([hp = p]() {
