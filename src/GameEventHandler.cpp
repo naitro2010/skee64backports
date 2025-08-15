@@ -114,7 +114,6 @@ namespace plugin {
         if (original_size == 0) {
             std::thread t([]() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(350));
-                SKSE::GetTaskInterface()->AddTask([]() {
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
                     {
                         std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
@@ -154,7 +153,6 @@ namespace plugin {
                         t.join();
                     }
                 });
-            });
             t.detach();
         }
     }
