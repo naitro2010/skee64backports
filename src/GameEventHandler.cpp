@@ -249,18 +249,12 @@ namespace plugin {
             }
         }
     }
-    static void (*ApplyMorphsHookBodyNormalsDetour)(void *e, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
-                                                    bool defer) = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching,
-                                                                            bool defer)) 0x0;
-    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, RE::NiNode *node, bool isAttaching, bool defer) {
-        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, node, isAttaching, defer);
-        if (node) {
-            if (node->AsNode()) {
-                if (auto actor = refr->As<RE::Actor>()) {
-                    if (actor->Is3DLoaded()) {
-                        AddActorToRecalculate(actor);
-                    }
-                }
+    static void (*ApplyMorphsHookBodyNormalsDetour)(void *morphInterface, RE::TESObjectREFR *refr, void* arg2, void* arg3) = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void* arg2, void* arg3)) 0x0;
+    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, void* arg2, void* arg3) {
+        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, arg2,arg3);
+        if (auto actor = refr->As<RE::Actor>()) {
+            if (actor->Is3DLoaded()) {
+                AddActorToRecalculate(actor);
             }
         }
     }
@@ -310,8 +304,8 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookFaceNormalsDetour, &ApplyMorphsHookFaceNormals);
                     DetourTransactionCommit();
-                    ApplyMorphsHookBodyNormalsDetour = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching, bool defer))(
-                        (uint64_t) skee64_info.lpBaseOfDll + 0x8460);
+                    ApplyMorphsHookBodyNormalsDetour = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3))(
+                        (uint64_t) skee64_info.lpBaseOfDll + 0x73d0);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
@@ -343,8 +337,8 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookFaceNormalsDetour, &ApplyMorphsHookFaceNormals);
                     DetourTransactionCommit();
-                    ApplyMorphsHookBodyNormalsDetour = (void (*)(void *, RE::TESObjectREFR *, RE::NiNode *, bool isAttaching, bool defer))(
-                        (uint64_t) skee64_info.lpBaseOfDll + 0x1cd70);
+                    ApplyMorphsHookBodyNormalsDetour = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3))(
+                        (uint64_t) skee64_info.lpBaseOfDll + 0x1b890);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
