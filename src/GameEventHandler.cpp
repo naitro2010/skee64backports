@@ -107,7 +107,7 @@ namespace plugin {
                                                    FaceMorphData(fg_node, npc, relative, std::string(morphName->c_str()), handle));
                     if (multi_morph_tasks_scheduled == 0) {
                         multi_morph_tasks_scheduled += 1;
-                        std::thread t([] {
+                        std::thread t([] () {
                             std::this_thread::sleep_for(std::chrono::milliseconds(500));
                             SKSE::GetTaskInterface()->AddTask([]() {
                                 std::lock_guard<std::recursive_mutex> l(queued_morphs_mutex);
