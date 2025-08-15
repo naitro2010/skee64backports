@@ -15,7 +15,10 @@ namespace plugin {
 #undef GetObject
     static uint64_t NIOVTaskUpdateSkinPartitionvtable = 0x0;
     static uint32_t multi_morph_tasks_scheduled = 0;
+    static uint32_t recalculate_tasks_scheduled = 0;
+    static std::recursive_mutex queued_recalcs_mutex;
     static std::recursive_mutex queued_morphs_mutex;
+    
     static void WalkRecalculateNormals(RE::NiNode *node) {
         if (node == nullptr) {
             return;
@@ -92,6 +95,7 @@ namespace plugin {
             RE::ActorHandle handle;
     } FaceMorphData;
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
+    std::unordered_map<uint32_t,RE::ActorHandle> queued_recalcs;
     static void FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc, RE::BSFixedString *morphName,
                                    float relative) {
         if (morphName) {
@@ -115,7 +119,7 @@ namespace plugin {
                                 std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> copy_queued_morphs(
                                     queued_morphs);
                                 queued_morphs.clear();
-                                std::unordered_set<RE::ActorHandle*> updated_actors;
+                                std::vector<RE::ActorHandle> updated_actors;
                                 std::unordered_set<uint32_t> native_handles;
                                 for (auto p: copy_queued_morphs) {
                                     if (auto actor = p.second.handle.get()) {
@@ -129,18 +133,28 @@ namespace plugin {
                                             }
                                             if (!native_handles.contains((p.second.handle.native_handle()))) {
                                                 native_handles.insert(p.second.handle.native_handle());
-                                                updated_actors.insert(&(p.second.handle));
+                                                updated_actors.push_back((p.second.handle));
                                             }
                                         }
                                     }
                                 }
 
                                 for (auto &ah: updated_actors) {
-                                    if (auto actor = ah->get()) {
+                                    if (auto actor = ah.get()) {
                                         if (actor->Is3DLoaded()) {
-                                            if (auto node = actor->GetFaceNode()) {
-                                                UpdateFaceModel(node);
-                                                WalkRecalculateNormals(node);
+                                            if (auto obj = actor->Get3D1(true)) {
+                                                if (auto node = obj->AsNode()) {
+                                                    WalkRecalculateNormals(node);
+                                                }
+                                            }
+                                            if (auto obj = actor->Get3D1(false)) {
+                                                if (auto node = obj->AsNode()) {
+                                                    WalkRecalculateNormals(node);
+                                                }
+                                            }
+                                            if (auto facenode = actor->GetFaceNode()) {
+                                                UpdateFaceModel(facenode);
+                                                WalkRecalculateNormals(facenode);
                                             }
                                         }
                                         
@@ -219,7 +233,64 @@ namespace plugin {
     void GameEventHandler::onPostLoad() {
         logger::info("onPostLoad()");
     }
+    class Update3DModelRecalculate : public RE::BSTEventSink<SKSE::NiNodeUpdateEvent> {
+            RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent *a_event,
+                                                  RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
+                if (a_event && a_event->reference && a_event->reference->Is3DLoaded()) {
+                    if (auto actor=a_event->reference->As<RE::Actor>()) {
+                        actor->IncRefCount();
+                        auto handle=actor->GetHandle();
+                        std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
+                        auto original_size = queued_recalcs.size();
+                        if (queued_recalcs.contains(handle.native_handle())) {
+                            actor->DecRefCount();    
+                        } else {
+                            queued_recalcs.insert_or_assign(handle.native_handle(),handle);
+                        }
+                        if (original_size == 0) {
+                            std::thread t([]() {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(350));
+                                SKSE::GetTaskInterface()->AddTask([]() {
+                                    std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
+                                    auto temp_recalcs = std::unordered_map(queued_recalcs);
+                                    std::vector<std::thread> spawned_threads;
+                                    for (auto p: temp_recalcs) {
+                                        spawned_threads.push_back(std::thread([hp=p]() {
+                                            auto actor = hp.second.get();
+                                            if (actor->Is3DLoaded()) {
+                                                if (auto obj = actor->Get3D1(true)) {
+                                                    if (auto node = obj->AsNode()) {
+                                                        WalkRecalculateNormals(node);
+                                                    }
+                                                }
+                                                if (auto obj = actor->Get3D1(false)) {
+                                                    if (auto node = obj->AsNode()) {
+                                                        WalkRecalculateNormals(node);
+                                                    }
+                                                }
+                                                if (auto facenode = actor->GetFaceNode()) {
+                                                    UpdateFaceModel(facenode);
+                                                    WalkRecalculateNormals(facenode);
+                                                }
+                                            }
+                                            actor->DecRefCount();
+                                        }));
+                                    }
+                                    for (auto &t: spawned_threads) {
+                                        t.join();
+                                    }
+                                });
+                            });
+                            t.detach();
+                        }
+                    }
+                }
+                
 
+                return RE::BSEventNotifyControl::kContinue;
+            }
+    };
+    Update3DModelRecalculate *recalchook = nullptr;
     static std::atomic<uint32_t> skee_loaded = 0;
     void GameEventHandler::onPostPostLoad() {
         if (HMODULE handle = GetModuleHandleA("skee64.dll")) {
@@ -320,6 +391,10 @@ namespace plugin {
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(normalfix);
                     }*/
                     logger::info("SKEE64 1170 extra normal recalculation added");
+                }
+                if (recalchook == nullptr) {
+                        recalchook = new Update3DModelRecalculate();
+                        SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
                 }
             }
         }
