@@ -104,16 +104,21 @@ namespace plugin {
     static void AddActorToRecalculate(RE::Actor *actor) {
         actor->IncRefCount();
         auto handle = actor->GetHandle();
-        std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
-        auto original_size = queued_recalcs.size();
-        if (queued_recalcs.contains(handle.native_handle())) {
-            actor->DecRefCount();
-        } else {
-            queued_recalcs.insert_or_assign(handle.native_handle(), handle);
+        auto original_size = 0;
+        auto new_size = 0;
+        {
+            std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
+            original_size = queued_recalcs.size();
+            if (queued_recalcs.contains(handle.native_handle())) {
+                actor->DecRefCount();
+            } else {
+                queued_recalcs.insert_or_assign(handle.native_handle(), handle);
+            }
+            new_size = queued_recalcs.size();
         }
-        if (original_size == 0) {
+        if (original_size == 0 && new_size > 0) {
             std::thread t([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(350));
+                std::this_thread::sleep_for(std::chrono::milliseconds(600));
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
                     {
                         std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
