@@ -62,38 +62,35 @@ namespace plugin {
                     continue;
                 }
                 {
-                    std::lock_guard<std::recursive_mutex> l(thread_mutex);
-                    spawned_threads.push_back(std::thread([=]() {
-                        RE::NiPointer<RE::NiObject> newPartition = nullptr;
-                        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
-                        if (!newPartition) {
-                            return;
-                        }
-                        RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
-                            RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
-                        if (newSkinPartition->partitions.size() == 0) {
-                            newSkinPartition->DecRefCount();
-                            return;
-                        }
-                        {
-                            NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
-                            applicator.Apply();
-                        }
-                        for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
-                            auto &pPartition = newSkinPartition->partitions[p];
-                            memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
-                                   newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
-                        }
-                        uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-                        UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
+                    RE::NiPointer<RE::NiObject> newPartition = nullptr;
+                    geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
+                    if (!newPartition) {
+                        return;
+                    }
+                    RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
+                        RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
+                    if (newSkinPartition->partitions.size() == 0) {
+                        newSkinPartition->DecRefCount();
+                        return;
+                    }
+                    {
+                        NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
+                        applicator.Apply();
+                    }
+                    for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
+                        auto &pPartition = newSkinPartition->partitions[p];
+                        memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
+                               newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+                    }
+                    uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                    UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
 
-                        uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
-                        uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
-                        UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
-                        UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
-                        auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
-                        RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
-                    }));
+                    uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
+                    uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
+                    UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
+                    UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
+                    auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
+                    RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
                 }
             }
         }
@@ -273,7 +270,6 @@ namespace plugin {
                                                   RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
                 if (a_event && a_event->reference && a_event->reference->Is3DLoaded()) {
                     if (auto actor = a_event->reference->As<RE::Actor>()) {
-                    
                         AddActorToRecalculate(actor);
                     }
                 }
@@ -391,7 +387,6 @@ namespace plugin {
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
                     }
                 }
-
             }
         }
 
