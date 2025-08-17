@@ -27,8 +27,8 @@ namespace plugin {
     } FaceMorphData;
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<uint32_t, RE::ActorHandle> queued_recalcs;
-    
-    static void WalkRecalculateNormals(RE::NiNode *node, std::recursive_mutex& thread_mutex, std::vector<std::thread>& spawned_threads) {
+
+    static void WalkRecalculateNormals(RE::NiNode *node, std::recursive_mutex &thread_mutex, std::vector<std::thread> &spawned_threads) {
         if (node == nullptr) {
             return;
         }
@@ -37,7 +37,7 @@ namespace plugin {
                 continue;
             }
             if (auto c_node = obj->AsNode()) {
-                WalkRecalculateNormals(c_node,thread_mutex,spawned_threads);
+                WalkRecalculateNormals(c_node, thread_mutex, spawned_threads);
             }
             if (auto geo = obj->AsGeometry()) {
                 if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
@@ -94,7 +94,6 @@ namespace plugin {
                         auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
                         RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
                     }));
-
                 }
             }
         }
@@ -104,7 +103,7 @@ namespace plugin {
     static void AddActorToRecalculate(RE::Actor *actor) {
         actor->IncRefCount();
         auto handle = actor->GetHandle();
-        auto original_size=0;
+        auto original_size = 0;
         {
             std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
             original_size = queued_recalcs.size();
@@ -121,7 +120,7 @@ namespace plugin {
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
                     {
                         std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
-                        temp_recalcs=std::unordered_map(queued_recalcs);
+                        temp_recalcs = std::unordered_map(queued_recalcs);
                         queued_recalcs.clear();
                     }
                     std::vector<std::thread> spawned_threads;
@@ -133,8 +132,7 @@ namespace plugin {
                             if (actor->Is3DLoaded()) {
                                 if (auto obj = actor->Get3D1(true)) {
                                     if (auto node = obj->AsNode()) {
-                                        
-                                        WalkRecalculateNormals(node,thread_mutex,spawned_threads_recalc);
+                                        WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
                                     }
                                 }
                                 if (auto obj = actor->Get3D1(false)) {
@@ -147,7 +145,7 @@ namespace plugin {
                                     WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
                                 }
                             }
-                            for (auto &t : spawned_threads_recalc) {
+                            for (auto &t: spawned_threads_recalc) {
                                 t.join();
                             }
                             actor->DecRefCount();
@@ -163,7 +161,7 @@ namespace plugin {
     }
     static auto OriginalFaceApplyMorph =
         (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
-    
+
     static void FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc, RE::BSFixedString *morphName,
                                    float relative) {
         if (morphName) {
@@ -212,7 +210,6 @@ namespace plugin {
                                         if (actor->Is3DLoaded()) {
                                             AddActorToRecalculate(actor.get());
                                         }
-                                        
                                     }
                                 }
                             });
@@ -252,9 +249,11 @@ namespace plugin {
             }
         }
     }
-    static void (*ApplyMorphsHookBodyNormalsDetour)(void *morphInterface, RE::TESObjectREFR *refr, void* arg2, void* arg3) = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void* arg2, void* arg3)) 0x0;
-    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, void* arg2, void* arg3) {
-        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, arg2,arg3);
+    static void (*ApplyMorphsHookBodyNormalsDetour)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
+                                                    void *arg3) = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
+                                                                            void *arg3)) 0x0;
+    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3) {
+        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, arg2, arg3);
         if (auto actor = refr->As<RE::Actor>()) {
             if (actor->Is3DLoaded()) {
                 AddActorToRecalculate(actor);
@@ -273,11 +272,11 @@ namespace plugin {
             RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent *a_event,
                                                   RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
                 if (a_event && a_event->reference && a_event->reference->Is3DLoaded()) {
-                    if (auto actor=a_event->reference->As<RE::Actor>()) {
-                        
+                    if (auto actor = a_event->reference->As<RE::Actor>()) {
+                    
+                        AddActorToRecalculate(actor);
                     }
                 }
-                
 
                 return RE::BSEventNotifyControl::kContinue;
             }
@@ -321,6 +320,10 @@ namespace plugin {
                     DetourAttach(&(PVOID &) OriginalFaceApplyMorph, &FaceApplyMorphHook);
                     DetourTransactionCommit();
                     logger::info("SKEE64 1597 normal recaclulation backported");
+                    if (recalchook == nullptr) {
+                        recalchook = new Update3DModelRecalculate();
+                        SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
+                    }
                 }
                 uint8_t signature1170[] = {0xff, 0x90, 0xf0, 0x03, 0x00, 0x00};
                 if ((skee64_info.SizeOfImage >= 0xc2950 + 0x40) &&
@@ -333,7 +336,7 @@ namespace plugin {
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphHookFaceNormalsDetour, &ApplyMorphHookFaceNormals);
-                    DetourTransactionCommit();                    
+                    DetourTransactionCommit();
                     ApplyMorphsHookFaceNormalsDetour =
                         (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0xb9a40);
                     DetourTransactionBegin();
@@ -383,11 +386,12 @@ namespace plugin {
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(normalfix);
                     }*/
                     logger::info("SKEE64 1170 extra normal recalculation added");
-                }
-                if (recalchook == nullptr) {
+                    if (recalchook == nullptr) {
                         recalchook = new Update3DModelRecalculate();
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
+                    }
                 }
+
             }
         }
 
