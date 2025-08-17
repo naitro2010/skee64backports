@@ -61,6 +61,7 @@ namespace plugin {
                 if (!material) {
                     continue;
                 }
+                if (!property->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals))
                 {
                     RE::NiPointer<RE::NiObject> newPartition = nullptr;
                     geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
