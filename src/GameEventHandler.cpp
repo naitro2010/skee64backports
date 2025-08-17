@@ -104,8 +104,7 @@ namespace plugin {
     static void AddActorToRecalculate(RE::Actor *actor) {
         actor->IncRefCount();
         auto handle = actor->GetHandle();
-        auto original_size = 0;
-        auto new_size = 0;
+        auto original_size=0;
         {
             std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
             original_size = queued_recalcs.size();
@@ -114,11 +113,11 @@ namespace plugin {
             } else {
                 queued_recalcs.insert_or_assign(handle.native_handle(), handle);
             }
-            new_size = queued_recalcs.size();
         }
-        if (original_size == 0 && new_size > 0) {
+        if (original_size == 0) {
             std::thread t([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(600));
+                std::this_thread::sleep_for(std::chrono::milliseconds(350));
+                SKSE::GetTaskInterface()->AddTask([]() {
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
                     {
                         std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
@@ -158,6 +157,7 @@ namespace plugin {
                         t.join();
                     }
                 });
+            });
             t.detach();
         }
     }
