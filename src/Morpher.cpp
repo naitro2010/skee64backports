@@ -56,47 +56,48 @@ void NormalApplicatorBackported::Apply() {
 
         UInt32 vertexSize = vertexDesc.GetSize();
         UInt8* vertexBlock = reinterpret_cast<UInt8*>(skinPartition->partitions[0].buffData->rawVertexData);
-
-        if (dynamicTriShape) {
-            for (UInt32 i = 0; i < numVertices; i++) {
-                DirectX::XMVECTOR* vertex = static_cast<DirectX::XMVECTOR*>(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData);
-                DirectX::XMStoreFloat3(reinterpret_cast<DirectX::XMFLOAT3*>(&rawVertices[i]), vertex[i]);
+        
+            if (dynamicTriShape) {
+                #pragma omp parallel for
+                for (int i = 0; i < (int)numVertices; i++) {
+                    DirectX::XMVECTOR* vertex =
+                        static_cast<DirectX::XMVECTOR*>(dynamicTriShape->GetDynamicTrishapeRuntimeData().dynamicData);
+                    DirectX::XMStoreFloat3(reinterpret_cast<DirectX::XMFLOAT3*>(&rawVertices[i]), vertex[i]);
+                }
             }
-        }
+            #pragma omp parallel for
+            for (int i = 0; i < (int)numVertices; i++) {
+                UInt8* vBegin = &vertexBlock[i * vertexSize];
 
-        for (UInt32 i = 0; i < numVertices; i++) {
-            UInt8* vBegin = &vertexBlock[i * vertexSize];
+                if (hasVertices) {
+                    rawVertices[i].x = (*(float*) vBegin);
+                    vBegin += 4;
+                    rawVertices[i].y = (*(float*) vBegin);
+                    vBegin += 4;
+                    rawVertices[i].z = (*(float*) vBegin);
+                    vBegin += 4;
 
-            if (hasVertices) {
-                rawVertices[i].x = (*(float*) vBegin);
-                vBegin += 4;
-                rawVertices[i].y = (*(float*) vBegin);
-                vBegin += 4;
-                rawVertices[i].z = (*(float*) vBegin);
-                vBegin += 4;
+                    vBegin += 4;  // Skip BitangetX
+                }
 
-                vBegin += 4;  // Skip BitangetX
+                if (hasUV) {
+                    rawUV[i].u = (*(half_float::half*) vBegin);
+                    vBegin += 2;
+                    rawUV[i].v = (*(half_float::half*) vBegin);
+                    vBegin += 2;
+                }
             }
 
-            if (hasUV) {
-                rawUV[i].u = (*(half_float::half*) vBegin);
-                vBegin += 2;
-                rawUV[i].v = (*(half_float::half*) vBegin);
-                vBegin += 2;
+            std::vector<UInt16> indices;
+            for (UInt32 p = 0; p < skinPartition->numPartitions; ++p) {
+                for (UInt32 t = 0; t < (uint32_t) skinPartition->partitions[p].triangles * 3; ++t) {
+                    indices.push_back(skinPartition->partitions[p].triList[t]);
+                }
             }
-        }
-
-        std::vector<UInt16> indices;
-        for (UInt32 p = 0; p < skinPartition->numPartitions; ++p) {
-            for (UInt32 t = 0; t < (uint32_t)skinPartition->partitions[p].triangles * 3; ++t) {
-                indices.push_back(skinPartition->partitions[p].triList[t]);
-            }
-        }
-
         RecalcNormals(indices.size() / 3, reinterpret_cast<Morpher::Triangle*>(&indices.at(0)));
         CalcTangentSpace(indices.size() / 3, reinterpret_cast<Morpher::Triangle*>(&indices.at(0)));
-
-        for (UInt32 i = 0; i < numVertices; i++) {
+        #pragma omp parallel for
+        for (int i = 0; i < (int)numVertices; i++) {
             UInt8* vBegin = &vertexBlock[i * vertexSize];
 
             bool skipVertex = lockedVertices.count(i);
@@ -154,8 +155,8 @@ void NormalApplicatorBackported::RecalcNormals(UInt32 numTriangles, Morpher::Tri
 
     std::vector<Morpher::Vector3> verts(numVertices);
     std::vector<Morpher::Vector3> norms(numVertices);
-
-    for (UInt32 i = 0; i < numVertices; i++) {
+    #pragma omp parallel for
+    for (int i = 0; i < (int)numVertices; i++) {
         verts[i].x = rawVertices[i].x * -0.1f;
         verts[i].z = rawVertices[i].y * 0.1f;
         verts[i].y = rawVertices[i].z * 0.1f;
@@ -163,13 +164,13 @@ void NormalApplicatorBackported::RecalcNormals(UInt32 numTriangles, Morpher::Tri
 
     // Face normals
     Morpher::Vector3 tn;
-    for (UInt32 t = 0; t < numTriangles; t++) {
+    for (int t = 0; t < (int)numTriangles; t++) {
         triangles[t].trinormal(verts, &tn);
         norms[triangles[t].p1] += tn;
         norms[triangles[t].p2] += tn;
         norms[triangles[t].p3] += tn;
     }
-
+    
     for (auto& n: norms)
         n.Normalize();
 
@@ -192,8 +193,8 @@ void NormalApplicatorBackported::RecalcNormals(UInt32 numTriangles, Morpher::Tri
         for (auto& n: norms)
             n.Normalize();
     }
-
-    for (UInt32 i = 0; i < numVertices; i++) {
+    #pragma omp parallel for
+    for (int i = 0; i < (int)numVertices; i++) {
         rawNormals[i].x = -norms[i].x;
         rawNormals[i].y = norms[i].z;
         rawNormals[i].z = norms[i].y;
@@ -207,8 +208,8 @@ void NormalApplicatorBackported::CalcTangentSpace(UInt32 numTriangles, Morpher::
     std::vector<Morpher::Vector3> tan2;
     tan1.resize(numVertices);
     tan2.resize(numVertices);
-
-    for (UInt32 i = 0; i < numTriangles; i++) {
+    #pragma omp parallel for
+    for (int i = 0; i < (int)numTriangles; i++) {
         int i1 = triangles[i].p1;
         int i2 = triangles[i].p2;
         int i3 = triangles[i].p3;
@@ -241,17 +242,19 @@ void NormalApplicatorBackported::CalcTangentSpace(UInt32 numTriangles, Morpher::
 
         sdir.Normalize();
         tdir.Normalize();
+        #pragma omp critical 
+        {
+            tan1[i1] += tdir;
+            tan1[i2] += tdir;
+            tan1[i3] += tdir;
 
-        tan1[i1] += tdir;
-        tan1[i2] += tdir;
-        tan1[i3] += tdir;
-
-        tan2[i1] += sdir;
-        tan2[i2] += sdir;
-        tan2[i3] += sdir;
+            tan2[i1] += sdir;
+            tan2[i2] += sdir;
+            tan2[i3] += sdir;
+        }
     }
-
-    for (UInt32 i = 0; i < numVertices; i++) {
+    #pragma omp parallel for
+    for (int i = 0; i < (int)numVertices; i++) {
         rawTangents[i] = tan1[i];
         rawBitangents[i] = tan2[i];
 
