@@ -162,7 +162,7 @@ namespace plugin {
                                 std::vector<std::thread> spawned_threads_recalc;
                                 if (auto actor = hp.second.get()) {
                                     if (actor->Is3DLoaded()) {
-                                        if (auto facenode = actor->GetFaceNodeSkinned()) {
+                                        if (auto facenode = actor->GetFaceNode()) {
                                             UpdateFaceModel(facenode);
                                             WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
                                         }
