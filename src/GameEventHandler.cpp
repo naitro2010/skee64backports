@@ -131,6 +131,9 @@ namespace plugin {
                                 if (auto actor = hp.second.get()) {
                                     if (actor->Is3DLoaded()) {
                                         if (auto obj = actor->Get3D1(true)) {
+                                            if (actor->Get3D1(true) == actor->Get3D1(false)) {
+                                                return;
+                                            }
                                             if (auto node = obj->AsNode()) {
                                                 WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
                                             }
@@ -157,12 +160,16 @@ namespace plugin {
                                     t.join();
                                 }
                             }));
+                            for (auto &t: spawned_threads) {
+                                t.join();
+                            }
+                            spawned_threads.clear();
                             spawned_threads.push_back(std::thread([hp = p]() {
                                 std::recursive_mutex thread_mutex;
                                 std::vector<std::thread> spawned_threads_recalc;
                                 if (auto actor = hp.second.get()) {
                                     if (actor->Is3DLoaded()) {
-                                        if (auto facenode = actor->GetFaceNode()) {
+                                        if (auto facenode = actor->GetFaceNodeSkinned()) {
                                             UpdateFaceModel(facenode);
                                             WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
                                         }
@@ -207,6 +214,7 @@ namespace plugin {
                 }
             }
         }
+        return;
 #else
         if (auto uiSingleton = RE::UI::GetSingleton()) {
             if (!uiSingleton->IsMenuOpen("RaceSex Menu")) {
