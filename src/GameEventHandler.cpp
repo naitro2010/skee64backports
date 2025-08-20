@@ -116,14 +116,13 @@ namespace plugin {
         }
         if (original_size == 0) {
             std::thread t([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(350));
                 SKSE::GetTaskInterface()->AddTask([]() {
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
                     {
                         std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
                         temp_recalcs = std::unordered_map(queued_recalcs);
                         queued_recalcs.clear();
-                        
+
                         std::vector<std::thread> spawned_threads;
                         for (auto p: temp_recalcs) {
                             spawned_threads.push_back(std::thread([hp = p]() {
@@ -163,7 +162,7 @@ namespace plugin {
                                 std::vector<std::thread> spawned_threads_recalc;
                                 if (auto actor = hp.second.get()) {
                                     if (actor->Is3DLoaded()) {
-                                        if (auto facenode = actor->GetFaceNode()) {
+                                        if (auto facenode = actor->GetFaceNodeSkinned()) {
                                             UpdateFaceModel(facenode);
                                             WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
                                         }
@@ -194,6 +193,21 @@ namespace plugin {
 
     static void FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc, RE::BSFixedString *morphName,
                                    float relative) {
+#ifndef PERFORMANCE_MODE
+        OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
+        if (morphName) {
+            if (fg_node) {
+                if (npc) {
+                    RE::ActorHandle handle = fg_node->GetRuntimeData().unk15C;
+                    if (auto actor = handle.get()) {
+                        if (actor->Is3DLoaded()) {
+                            AddActorToRecalculate(actor.get());
+                        }
+                    }
+                }
+            }
+        }
+#else
         if (auto uiSingleton = RE::UI::GetSingleton()) {
             if (!uiSingleton->IsMenuOpen("RaceSex Menu")) {
                 OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
@@ -227,16 +241,15 @@ namespace plugin {
             }
             return;
         }
-        { 
-            std::lock_guard<std::recursive_mutex> l(preset_mutex); 
+        {
+            std::lock_guard<std::recursive_mutex> l(preset_mutex);
             if (applying_slider == false) {
                 OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
                 if (morphName) {
                     if (fg_node) {
                         if (npc) {
                             RE::ActorHandle handle = fg_node->GetRuntimeData().unk15C;
-                            if (auto actor = handle.get())
-                            {
+                            if (auto actor = handle.get()) {
                                 if (actor->Is3DLoaded()) {
                                     AddActorToRecalculate(actor.get());
                                 }
@@ -304,15 +317,15 @@ namespace plugin {
             }
         }
         OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
+#endif
     }
     static void (*SliderHook)(void *e, float value, uint32_t sliderId) = (void (*)(void *e, float value, uint32_t sliderId)) 0x0;
-    static void SliderHookDetour(void* e, float value,uint32_t sliderId) {
+    static void SliderHookDetour(void *e, float value, uint32_t sliderId) {
         {
             std::lock_guard<std::recursive_mutex> l(preset_mutex);
             applying_slider = true;
-            SliderHook(e,value,sliderId);
+            SliderHook(e, value, sliderId);
             applying_slider = false;
-            
         }
     }
     static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
@@ -410,8 +423,7 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) OriginalFaceApplyMorph, &FaceApplyMorphHook);
                     DetourTransactionCommit();
-                    SliderHook = (void (*)(void *e, float value, uint32_t sliderId))(
-                        (uint64_t) skee64_info.lpBaseOfDll + 0x3c810);
+                    SliderHook = (void (*)(void *e, float value, uint32_t sliderId))((uint64_t) skee64_info.lpBaseOfDll + 0x3c810);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) SliderHook, &SliderHookDetour);
