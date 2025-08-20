@@ -93,6 +93,8 @@ namespace plugin {
                     UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
                     auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
                     RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
+                    property->SetupGeometry(geo);
+                    property->FinishSetupGeometry(geo);
                 }
             }
         }
@@ -121,64 +123,65 @@ namespace plugin {
                         std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
                         temp_recalcs = std::unordered_map(queued_recalcs);
                         queued_recalcs.clear();
-                    }
-                    std::vector<std::thread> spawned_threads;
-                    for (auto p: temp_recalcs) {
-                        spawned_threads.push_back(std::thread([hp = p]() {
-                            std::recursive_mutex thread_mutex;
-                            std::vector<std::thread> spawned_threads_recalc;
-                            if (auto actor = hp.second.get()) {
-                                if (actor->Is3DLoaded()) {
-                                    if (auto obj = actor->Get3D1(true)) {
-                                        if (auto node = obj->AsNode()) {
-                                            WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
+                        
+                        std::vector<std::thread> spawned_threads;
+                        for (auto p: temp_recalcs) {
+                            spawned_threads.push_back(std::thread([hp = p]() {
+                                std::recursive_mutex thread_mutex;
+                                std::vector<std::thread> spawned_threads_recalc;
+                                if (auto actor = hp.second.get()) {
+                                    if (actor->Is3DLoaded()) {
+                                        if (auto obj = actor->Get3D1(true)) {
+                                            if (auto node = obj->AsNode()) {
+                                                WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            for (auto &t: spawned_threads_recalc) {
-                                t.join();
-                            }
-                        }));
-                        spawned_threads.push_back(std::thread([hp = p]() {
-                            std::recursive_mutex thread_mutex;
-                            std::vector<std::thread> spawned_threads_recalc;
-                            if (auto actor = hp.second.get()) {
-                                if (actor->Is3DLoaded()) {
-                                    if (auto obj = actor->Get3D1(false)) {
-                                        if (auto node = obj->AsNode()) {
-                                            WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
+                                for (auto &t: spawned_threads_recalc) {
+                                    t.join();
+                                }
+                            }));
+                            spawned_threads.push_back(std::thread([hp = p]() {
+                                std::recursive_mutex thread_mutex;
+                                std::vector<std::thread> spawned_threads_recalc;
+                                if (auto actor = hp.second.get()) {
+                                    if (actor->Is3DLoaded()) {
+                                        if (auto obj = actor->Get3D1(false)) {
+                                            if (auto node = obj->AsNode()) {
+                                                WalkRecalculateNormals(node, thread_mutex, spawned_threads_recalc);
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            for (auto &t: spawned_threads_recalc) {
-                                t.join();
-                            }
-                        }));
-                        spawned_threads.push_back(std::thread([hp = p]() {
-                            std::recursive_mutex thread_mutex;
-                            std::vector<std::thread> spawned_threads_recalc;
-                            if (auto actor = hp.second.get()) {
-                                if (actor->Is3DLoaded()) {
-                                    if (auto facenode = actor->GetFaceNode()) {
-                                        UpdateFaceModel(facenode);
-                                        WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
+                                for (auto &t: spawned_threads_recalc) {
+                                    t.join();
+                                }
+                            }));
+                            spawned_threads.push_back(std::thread([hp = p]() {
+                                std::recursive_mutex thread_mutex;
+                                std::vector<std::thread> spawned_threads_recalc;
+                                if (auto actor = hp.second.get()) {
+                                    if (actor->Is3DLoaded()) {
+                                        if (auto facenode = actor->GetFaceNode()) {
+                                            UpdateFaceModel(facenode);
+                                            WalkRecalculateNormals(facenode, thread_mutex, spawned_threads_recalc);
+                                        }
                                     }
                                 }
-                            }
-                            for (auto &t: spawned_threads_recalc) {
-                                t.join();
-                            }
-                        }));
-                    }
+                                for (auto &t: spawned_threads_recalc) {
+                                    t.join();
+                                }
+                            }));
+                        }
 
-                    for (auto &t: spawned_threads) {
-                        t.join();
-                    }
-                    for (auto p: temp_recalcs) {
-                        if (auto actor = p.second.get()) {
-                            actor->DecRefCount();
+                        for (auto &t: spawned_threads) {
+                            t.join();
+                        }
+                        for (auto p: temp_recalcs) {
+                            if (auto actor = p.second.get()) {
+                                actor->DecRefCount();
+                            }
                         }
                     }
                 });
