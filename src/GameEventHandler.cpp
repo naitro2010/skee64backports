@@ -54,7 +54,7 @@ namespace plugin {
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<uint32_t, RE::ActorHandle> queued_recalcs;
 
-    static void WalkRecalculateNormals(RE::NiNode *node, std::vector<std::thread> &spawned_threads) {
+    static void WalkRecalculateNormals(RE::NiNode *node, std::vector<std::jthread> &spawned_threads) {
         if (node == nullptr) {
             return;
         }
@@ -100,7 +100,7 @@ namespace plugin {
                         return;
                     }
                     geo->IncRefCount();
-                    spawned_threads.push_back(std::thread([geo, newSkinPartition, property] {
+                    spawned_threads.push_back(std::jthread([geo, newSkinPartition, property] {
                         {
                             NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
                             applicator.Apply();
@@ -158,18 +158,17 @@ namespace plugin {
                             temp_recalcs = std::unordered_map(queued_recalcs);
                             queued_recalcs.clear();
                         }
-                        std::vector<std::thread> spawned_threads1;
-                        std::vector<std::thread> spawned_threads2;
-                        std::vector<std::thread> spawned_threads3;
+                        std::vector<std::jthread> spawned_threads1;
+                        std::vector<std::jthread> spawned_threads2;
+                        std::vector<std::jthread> spawned_threads3;
                         for (auto p: temp_recalcs) {
                             if (auto actor = p.second.get()) {
                                 if (actor->Is3DLoaded()) {
                                     if (auto obj = actor->Get3D1(true)) {
-                                        if (actor->Get3D1(true) == actor->Get3D1(false)) {
-                                            return;
-                                        }
-                                        if (auto node = obj->AsNode()) {
-                                            WalkRecalculateNormals(node,spawned_threads1);
+                                        if (actor->Get3D1(true) != actor->Get3D1(false)) {
+                                            if (auto node = obj->AsNode()) {
+                                                WalkRecalculateNormals(node,spawned_threads1);
+                                            }
                                         }
                                     }
                                 }
@@ -194,16 +193,16 @@ namespace plugin {
                         }
                         
                         
-                        std::thread([spawned_threads1 = std::move(spawned_threads1), spawned_threads2 = std::move(spawned_threads2),
-                                     spawned_threads3 = std::move(spawned_threads3), processing_start_time] mutable {
-                            for (std::thread &t: spawned_threads1) {
-                                t.join();
+                        std::thread([threads1 = std::move(spawned_threads1), threads2 = std::move(spawned_threads2),
+                                     threads3 = std::move(spawned_threads3), processing_start_time] mutable {
+                            for (std::jthread &t: threads1) {
+                                std::move(t).join();
                             }
-                            for (std::thread &t: spawned_threads2) {
-                                t.join();
+                            for (std::jthread &t: threads2) {
+                                std::move(t).join();
                             }
-                            for (std::thread &t: spawned_threads3) {
-                                t.join();
+                            for (std::jthread &t: threads3) {
+                                std::move(t).join();
                             }
                             auto processing_end_time = std::chrono::high_resolution_clock::now();
                             double time_delay = (processing_end_time - processing_start_time).count();
