@@ -11,6 +11,7 @@
 #include <xbyak/xbyak.h>
 #include "detours/detours.h"
 #include "Morpher.h"
+#include "ini.h"
 namespace plugin {
 #undef GetObject
     static uint64_t NIOVTaskUpdateSkinPartitionvtable = 0x0;
@@ -131,7 +132,7 @@ namespace plugin {
             }
         }
     }
-
+    static uint32_t normal_delay_milliseconds = 1000;
     static void (*UpdateFaceModel)(RE::NiNode *node) = (void (*)(RE::NiNode *)) 0x0;
     static void AddActorToRecalculate(RE::Actor *actor) {
         auto handle = actor->GetHandle();
@@ -147,7 +148,7 @@ namespace plugin {
         }
         if (original_size == 0) {
             std::thread t([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds((std::rand()%150)+30));
+                std::this_thread::sleep_for(std::chrono::milliseconds(normal_delay_milliseconds));
                 SKSE::GetTaskInterface()->AddTask([]() {
                     auto processing_start_time = std::chrono::high_resolution_clock::now();
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
@@ -316,6 +317,11 @@ namespace plugin {
     Update3DModelRecalculate *recalchook = nullptr;
     static std::atomic<uint32_t> skee_loaded = 0;
     void GameEventHandler::onPostPostLoad() {
+        mINI::INIFile file("Data\\skse\\plugins\\skee64backports.ini");
+        mINI::INIStructure ini;
+        file.read(ini);
+        normal_delay_milliseconds = std::stoul(ini["SKEEBackports"]["normal_delay_milliseconds"]);
+        
         task_pool_ptr = (bool (*)(void)) REL::VariantID(38079, 39033, 0x6488a0).address();
         if (HMODULE handle = GetModuleHandleA("skee64.dll")) {
             MODULEINFO skee64_info;

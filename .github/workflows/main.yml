@@ -44,6 +44,7 @@ jobs:
           mkdir SKSE/Plugins
           move ../skee64backports.dll SKSE/Plugins
           move ../skee64backports.pdb SKSE/Plugins
+          move ${{github.workspace}}/skee64backports.ini SKSE/Plugins/skee64backports.ini
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with: 
