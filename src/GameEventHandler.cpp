@@ -101,7 +101,7 @@ namespace plugin {
                     }
                     geo->IncRefCount();
                     spawned_threads.push_back(std::jthread([geo, newSkinPartition, property] {
-                        {
+                    {
                             NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
                             applicator.Apply();
                             for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
@@ -109,7 +109,6 @@ namespace plugin {
                                 memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
                                        newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                             }
-
                             SKSE::GetTaskInterface()->AddTask([newSkinPartition, property, geo]() {
                                 uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
                                 UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
@@ -148,7 +147,7 @@ namespace plugin {
         }
         if (original_size == 0) {
             std::thread t([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                std::this_thread::sleep_for(std::chrono::milliseconds((std::rand()%150)+30));
                 SKSE::GetTaskInterface()->AddTask([]() {
                     auto processing_start_time = std::chrono::high_resolution_clock::now();
                     std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
@@ -207,7 +206,7 @@ namespace plugin {
                             auto processing_end_time = std::chrono::high_resolution_clock::now();
                             double time_delay = (processing_end_time - processing_start_time).count();
                             logger::warn("time_delay {}", time_delay);
-                        }).detach();
+                        }).join();
                         
                     }
                 });
