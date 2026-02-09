@@ -53,7 +53,7 @@ namespace plugin {
             RE::ActorHandle handle;
     } FaceMorphData;
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
-    std::unordered_map<uint32_t, RE::ActorHandle> queued_recalcs;
+    std::unordered_map<RE::FormID, RE::ActorHandle> queued_recalcs;
 
     static void WalkRecalculateNormals(RE::NiNode *node, std::vector<std::jthread> &spawned_threads) {
         if (node == nullptr) {
@@ -79,11 +79,11 @@ namespace plugin {
                 }
                 if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect] ||
                     !geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect]->GetRTTI()->IsKindOf(
-                        (RE::NiRTTI *) RE::BSLightingShaderProperty::Ni_RTTI.address())) {
+                        (RE::NiRTTI *) RE::BSShaderProperty::Ni_RTTI.address())) {
                     continue;
                 }
-                RE::BSLightingShaderProperty *property =
-                    (RE::BSLightingShaderProperty *) geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+                RE::BSShaderProperty *property =
+                    (RE::BSShaderProperty *) geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
                 auto material = property->material;
                 if (!material) {
                     continue;
@@ -100,8 +100,6 @@ namespace plugin {
                         newSkinPartition->DecRefCount();
                         return;
                     }
-                    geo->IncRefCount();
-                    spawned_threads.push_back(std::jthread([geo, newSkinPartition, property] {
                     {
                             NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
                             applicator.Apply();
@@ -110,23 +108,20 @@ namespace plugin {
                                 memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
                                        newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                             }
-                            SKSE::GetTaskInterface()->AddTask([newSkinPartition, property, geo]() {
-                                uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-                                UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
+                            uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                            UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
 
-                                uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
-                                uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
-                                UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
-                                UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
-                                auto RunNIOVTaskUpdateSkinPartition =
-                                    ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
-                                RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
-                                property->SetupGeometry(geo);
-                                property->FinishSetupGeometry(geo);
-                                geo->DecRefCount();
-                            });
-                        }
-                    }));
+                            uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
+                            uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
+                            UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
+                            UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
+                            auto RunNIOVTaskUpdateSkinPartition =
+                                ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
+                            RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
+                            property->SetupGeometry(geo);
+                            property->FinishSetupGeometry(geo);
+                        
+                    }
 
                 }
             }
@@ -140,10 +135,10 @@ namespace plugin {
         {
             std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
             original_size = queued_recalcs.size();
-            if (queued_recalcs.contains(handle.native_handle())) {
+            if (queued_recalcs.contains(actor->formID)) {
                 return;
             } else {
-                queued_recalcs.insert_or_assign(handle.native_handle(), handle);
+                queued_recalcs.insert_or_assign(actor->formID, handle);
             }
         }
         if (original_size == 0) {
@@ -151,7 +146,7 @@ namespace plugin {
                 std::this_thread::sleep_for(std::chrono::milliseconds(normal_delay_milliseconds));
                 SKSE::GetTaskInterface()->AddTask([]() {
                     auto processing_start_time = std::chrono::high_resolution_clock::now();
-                    std::unordered_map<uint32_t, RE::ActorHandle> temp_recalcs;
+                    std::unordered_map<RE::FormID, RE::ActorHandle> temp_recalcs;
                     {
                         {
                             std::lock_guard<std::recursive_mutex> l(queued_recalcs_mutex);
