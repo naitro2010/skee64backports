@@ -63,6 +63,9 @@ namespace plugin {
     std::unordered_map<RE::FormID,RecalcProgressData> recalcs_in_progress;
     uint64_t recalc_tasks_started = 0;
     static void ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> geo) {
+        if (GetUserDataFixed(geo.get()) == nullptr) {
+            return;
+        }
         if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
             return;
         }
@@ -246,7 +249,16 @@ namespace plugin {
                                 }
                                 auto &rd = recalcs_in_progress[actor_id];
                                 if (auto actor = rd.actor_handle.get()) {
-                                    if (actor->Is3DLoaded() == false) {
+                                    if (auto refr = RE::TESForm::LookupByID(rd.actor_id)) {
+                                        if (refr->As<RE::Actor>() != actor.get()) {
+                                            recalcs_in_progress.erase(actor_id);
+                                            return;
+                                        }
+                                    } else {
+                                        recalcs_in_progress.erase(actor_id);
+                                        return;                                        
+                                    }
+                                    if ((actor->Is3DLoaded() == false) || actor->IsDeleted() || actor->IsDisabled()) {
                                         recalcs_in_progress.erase(actor_id);
                                         return;
                                     }
@@ -270,6 +282,13 @@ namespace plugin {
                                             std::lock_guard rl(recalcs_in_progress_lock);
                                             if (!recalcs_in_progress.contains(actor_id)) {
                                                 return;
+                                            }
+                                            auto &rd = recalcs_in_progress[actor_id];
+                                            if (auto actor = rd.actor_handle.get()) {
+                                                if ((actor->Is3DLoaded() == false) || actor->IsDeleted() || actor->IsDisabled()) {
+                                                    recalcs_in_progress.erase(actor_id);
+                                                    return;
+                                                }
                                             }
                                         }
                                         std::this_thread::sleep_for(std::chrono::milliseconds(8));
