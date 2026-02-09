@@ -52,10 +52,71 @@ namespace plugin {
             std::string morphName;
             RE::ActorHandle handle;
     } FaceMorphData;
+    typedef struct {
+            RE::FormID actor_id;
+            RE::ActorHandle actor_handle;
+            std::queue<RE::NiPointer<RE::BSGeometry>> geo_queue;
+    } RecalcProgressData;
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<RE::FormID, RE::ActorHandle> queued_recalcs;
+    std::recursive_mutex recalcs_in_progress_lock;
+    std::unordered_map<RE::FormID,RecalcProgressData> recalcs_in_progress;
+    uint64_t recalc_tasks_started = 0;
+    static void ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> geo) {
+        if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
+            return;
+        }
+        if (geo->GetGeometryRuntimeData().skinInstance->skinPartition == nullptr) {
+            return;
+        }
+        if ((!geo->GetGeometryRuntimeData().vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL)) &&
+            (!geo->GetGeometryRuntimeData().vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT))) {
+            return;
+        }
+        if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect] ||
+            !geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect]->GetRTTI()->IsKindOf(
+                (RE::NiRTTI *) RE::BSShaderProperty::Ni_RTTI.address())) {
+            return;
+        }
+        RE::BSShaderProperty *property =
+            (RE::BSShaderProperty *) geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+        auto material = property->material;
+        if (!material) {
+            return;
+        }
+        RE::NiPointer<RE::NiObject> newPartition = nullptr;
+        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
+        if (!newPartition) {
+            return;
+        }
+        RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
+            RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
+        if (newSkinPartition->partitions.size() == 0) {
+            newSkinPartition->DecRefCount();
+            return;
+        }
+        {
+            NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo.get()), newSkinPartition);
+            applicator.Apply();
+            for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
+                auto &pPartition = newSkinPartition->partitions[p];
+                memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
+                       newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+            }
+            uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+            UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
 
-    static void WalkRecalculateNormals(RE::NiNode *node, std::vector<std::jthread> &spawned_threads) {
+            uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
+            uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
+            UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
+            UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
+            auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
+            RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
+            property->SetupGeometry(geo.get());
+            property->FinishSetupGeometry(geo.get());
+        }
+    }
+    static void WalkRecalculateNormals(RE::FormID actor_id,RE::NiNode *node, std::vector<std::jthread> &spawned_threads, RecalcProgressData& progress_data) {
         if (node == nullptr) {
             return;
         }
@@ -64,7 +125,7 @@ namespace plugin {
                 continue;
             }
             if (auto c_node = obj->AsNode()) {
-                WalkRecalculateNormals(c_node,spawned_threads);
+                WalkRecalculateNormals(actor_id,c_node,spawned_threads,progress_data);
             }
             if (auto geo = obj->AsGeometry()) {
                 if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
@@ -89,39 +150,8 @@ namespace plugin {
                     continue;
                 }
                 if (!property->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals)) {
-                    RE::NiPointer<RE::NiObject> newPartition = nullptr;
-                    geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
-                    if (!newPartition) {
-                        return;
-                    }
-                    RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
-                        RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
-                    if (newSkinPartition->partitions.size() == 0) {
-                        newSkinPartition->DecRefCount();
-                        return;
-                    }
-                    {
-                            NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo), newSkinPartition);
-                            applicator.Apply();
-                            for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
-                                auto &pPartition = newSkinPartition->partitions[p];
-                                memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
-                                       newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
-                            }
-                            uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
-                            UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
-
-                            uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
-                            uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
-                            UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
-                            UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
-                            auto RunNIOVTaskUpdateSkinPartition =
-                                ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
-                            RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
-                            property->SetupGeometry(geo);
-                            property->FinishSetupGeometry(geo);
-                        
-                    }
+                    std::lock_guard rl(recalcs_in_progress_lock);
+                    progress_data.geo_queue.push(RE::NiPointer(geo));
 
                 }
             }
@@ -141,10 +171,22 @@ namespace plugin {
                 queued_recalcs.insert_or_assign(actor->formID, handle);
             }
         }
+
         if (original_size == 0) {
             std::thread t([]() {
-                std::this_thread::sleep_for(std::chrono::milliseconds(normal_delay_milliseconds));
+                while (true)
+                { 
+                    std::this_thread::sleep_for(std::chrono::milliseconds(normal_delay_milliseconds));
+                    {
+                        std::lock_guard rl(recalcs_in_progress_lock);
+                        if (recalc_tasks_started == 0 && recalcs_in_progress.size()==0) {
+                            recalc_tasks_started = 1;
+                            break;
+                        }
+                    }
+                }
                 SKSE::GetTaskInterface()->AddTask([]() {
+
                     auto processing_start_time = std::chrono::high_resolution_clock::now();
                     std::unordered_map<RE::FormID, RE::ActorHandle> temp_recalcs;
                     {
@@ -156,13 +198,24 @@ namespace plugin {
                         std::vector<std::jthread> spawned_threads1;
                         std::vector<std::jthread> spawned_threads2;
                         std::vector<std::jthread> spawned_threads3;
+                        
                         for (auto p: temp_recalcs) {
+                            std::lock_guard rl(recalcs_in_progress_lock);
+                            {
+                                RecalcProgressData data;
+                                data.actor_id = p.first;
+                                data.actor_handle = p.second;
+                                data.geo_queue = std::queue<RE::NiPointer<RE::BSGeometry>>();
+                                recalcs_in_progress.insert_or_assign(p.first, data);
+                            }
+                            
+                            auto &data = recalcs_in_progress[p.first];
                             if (auto actor = p.second.get()) {
                                 if (actor->Is3DLoaded()) {
                                     if (auto obj = actor->Get3D1(true)) {
                                         if (actor->Get3D1(true) != actor->Get3D1(false)) {
                                             if (auto node = obj->AsNode()) {
-                                                WalkRecalculateNormals(node,spawned_threads1);
+                                                WalkRecalculateNormals(p.first,node,spawned_threads1,data);
                                             }
                                         }
                                     }
@@ -173,7 +226,7 @@ namespace plugin {
                                 if (actor->Is3DLoaded()) {
                                     if (auto obj = actor->Get3D1(false)) {
                                         if (auto node = obj->AsNode()) {
-                                            WalkRecalculateNormals(node,spawned_threads2);
+                                            WalkRecalculateNormals(p.first, node, spawned_threads2,data);
                                         }
                                     }
                                 }
@@ -181,29 +234,67 @@ namespace plugin {
                             if (auto actor = p.second.get()) {
                                 if (actor->Is3DLoaded()) {
                                     if (auto facenode = actor->GetFaceNodeSkinned()) {
-                                        WalkRecalculateNormals(facenode,spawned_threads3);
+                                        WalkRecalculateNormals(p.first, facenode, spawned_threads3,data);
                                     }
                                 }
                             }
+                            RE::FormID actor_id = p.first;
+                            auto process_function = [](RE::FormID actor_id) {
+                                std::lock_guard rl(recalcs_in_progress_lock);
+                                if (!recalcs_in_progress.contains(actor_id)) {
+                                    return;
+                                }
+                                auto &rd = recalcs_in_progress[actor_id];
+                                if (auto actor = rd.actor_handle.get()) {
+                                    if (actor->Is3DLoaded() == false) {
+                                        recalcs_in_progress.erase(actor_id);
+                                        return;
+                                    }
+                                } else {
+                                    recalcs_in_progress.erase(actor_id);
+                                    return;
+                                }
+                                if (rd.geo_queue.empty()) {
+                                    recalcs_in_progress.erase(actor_id);
+                                    return;
+                                } else {
+                                    auto g = rd.geo_queue.front();
+                                    ProcessRecalcQueue(g);
+                                    rd.geo_queue.pop();
+                                }
+                            };
+                                std::thread t([actor_id, process_function]() {
+                                    std::atomic_bool completed;
+                                    while (true) {
+                                        {
+                                            std::lock_guard rl(recalcs_in_progress_lock);
+                                            if (!recalcs_in_progress.contains(actor_id)) {
+                                                return;
+                                            }
+                                        }
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                                        SKSE::GetTaskInterface()->AddTask([actor_id, process_function,&completed]() {
+                                            process_function(actor_id);
+                                            completed.store(true);
+                                        });
+                                        while (completed.load() != true) {
+                                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                        }
+                                        completed.store(false);
+                                        
+                                    }
+                                });
+                                t.detach();
+                            
                         }
                         
+
+
                         
-                        std::thread([threads1 = std::move(spawned_threads1), threads2 = std::move(spawned_threads2),
-                                     threads3 = std::move(spawned_threads3), processing_start_time] mutable {
-                            for (std::jthread &t: threads1) {
-                                std::move(t).join();
-                            }
-                            for (std::jthread &t: threads2) {
-                                std::move(t).join();
-                            }
-                            for (std::jthread &t: threads3) {
-                                std::move(t).join();
-                            }
-                            auto processing_end_time = std::chrono::high_resolution_clock::now();
-                            double time_delay = (processing_end_time - processing_start_time).count();
-                            logger::warn("time_delay {}", time_delay);
-                        }).join();
-                        
+                    }
+                    {
+                        std::lock_guard rl(recalcs_in_progress_lock);
+                        recalc_tasks_started = 0;
                     }
                 });
             });
