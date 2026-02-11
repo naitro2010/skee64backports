@@ -67,6 +67,10 @@ namespace plugin {
             logger::info("geometry doesn't have user data");
             return;
         }
+        if (!geo->parent) {
+            logger::info("geometry has no parent");
+            return;
+        }
         if (geo->GetRefCount() <= 1) {
             logger::info("geometry not referenced");
             return;
