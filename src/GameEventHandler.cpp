@@ -416,6 +416,23 @@ namespace plugin {
     void GameEventHandler::onPostLoad() {
         logger::info("onPostLoad()");
     }
+    
+    class CellRecalculate : public RE::BSTEventSink<RE::TESCellAttachDetachEvent> {
+            RE::BSEventNotifyControl ProcessEvent(const RE::TESCellAttachDetachEvent *a_event,
+                                                  RE::BSTEventSource<RE::TESCellAttachDetachEvent> *a_eventSource) {
+                if (a_event && a_event->reference && a_event->reference.get()->Is3DLoaded()) {
+                    if (auto actor = a_event->reference.get()->As<RE::Actor>()) {
+                        if (a_event->attached==false) {
+                            if (RE::PlayerCharacter::GetSingleton()) {
+                                AddActorToRecalculate(actor);
+                            }
+                        }
+                    }
+                }
+
+                return RE::BSEventNotifyControl::kContinue;
+            }
+    };
     class Update3DModelRecalculate : public RE::BSTEventSink<SKSE::NiNodeUpdateEvent> {
             RE::BSEventNotifyControl ProcessEvent(const SKSE::NiNodeUpdateEvent *a_event,
                                                   RE::BSTEventSource<SKSE::NiNodeUpdateEvent> *a_eventSource) {
@@ -429,6 +446,7 @@ namespace plugin {
             }
     };
     Update3DModelRecalculate *recalchook = nullptr;
+    CellRecalculate *recalchook2 = nullptr;
     static std::atomic<uint32_t> skee_loaded = 0;
     void GameEventHandler::onPostPostLoad() {
         mINI::INIFile file("Data\\skse\\plugins\\skee64backports.ini");
@@ -486,6 +504,8 @@ namespace plugin {
                     if (recalchook == nullptr) {
                         recalchook = new Update3DModelRecalculate();
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
+                        recalchook2 = new CellRecalculate();
+                        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESCellAttachDetachEvent>(recalchook2);
                     }
                 }
                 uint8_t signature1170[] = {0xff, 0x90, 0xf0, 0x03, 0x00, 0x00};
@@ -560,6 +580,8 @@ namespace plugin {
                     if (recalchook == nullptr) {
                         recalchook = new Update3DModelRecalculate();
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
+                        recalchook2 = new CellRecalculate();
+                        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESCellAttachDetachEvent>(recalchook2);
                     }
                 }
             }
