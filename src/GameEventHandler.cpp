@@ -103,10 +103,13 @@ namespace plugin {
         }
         RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
             RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
+        
         if (newSkinPartition->partitions.size() == 0) {
             newSkinPartition->DecRefCount();
             return;
         }
+        logger::info("new skin partition ref count {}",newSkinPartition->GetRefCount());
+        logger::info("old skin instance ref count {}", geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
         {
             NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo.get()), newSkinPartition);
             applicator.Apply();
@@ -117,8 +120,9 @@ namespace plugin {
             }
             uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
             UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
-
+            geo->GetGeometryRuntimeData().skinInstance->IncRefCount(); // skee64 decrements ref count with NiPointer destructor
             uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
+            newSkinPartition->IncRefCount();// skee64 decrements ref count with NiPointer destructor
             uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
             UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
             UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
@@ -126,6 +130,9 @@ namespace plugin {
             RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
             property->SetupGeometry(geo.get());
             property->FinishSetupGeometry(geo.get());
+            newSkinPartition->DecRefCount();
+            logger::info("new skin partition ref count after update {}", newSkinPartition->GetRefCount());
+            logger::info("old skin instance ref count after update {}", geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
         }
     }
     static void WalkRecalculateNormals(RE::FormID actor_id,RE::NiNode *node, std::vector<std::jthread> &spawned_threads, RecalcProgressData& progress_data) {
