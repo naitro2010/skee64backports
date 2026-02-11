@@ -72,7 +72,7 @@ namespace plugin {
             return nullptr;
         }
         logger::info("old geo ref count before recalc {} {}", geo->name.c_str(), geo->GetRefCount());
-        if (geo->GetRefCount() <= 2) {
+        if (geo->GetRefCount() <= 1) {
             logger::info("geometry not referenced by anything else");
             return nullptr;
         }
@@ -341,11 +341,12 @@ namespace plugin {
         }
     }
     static auto OriginalFaceApplyMorph =
-        (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
+        (uintptr_t (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
 
-    static void FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc, RE::BSFixedString *morphName,
+    static uintptr_t FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc,
+                                        RE::BSFixedString *morphName,
                                    float relative) {
-        OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
+        uintptr_t retval= OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
         if (morphName) {
             if (fg_node) {
                 if (npc) {
@@ -360,23 +361,25 @@ namespace plugin {
                 }
             }
         }
-        return;
+        return retval;
 
     }
-    static void (*SliderHook)(void *e, float value, uint32_t sliderId) = (void (*)(void *e, float value, uint32_t sliderId)) 0x0;
-    static void SliderHookDetour(void *e, float value, uint32_t sliderId) {
+    static auto SliderHook = (uintptr_t (*)(void *e, float value, uint32_t sliderId)) 0x0;
+    static uintptr_t SliderHookDetour(void *e, float value, uint32_t sliderId) {
+        uintptr_t retval = 0x0;
         {
             std::lock_guard<std::recursive_mutex> l(preset_mutex);
             applying_slider = true;
-            SliderHook(e, value, sliderId);
+            retval=SliderHook(e, value, sliderId);
             applying_slider = false;
         }
+        return retval;
     }
-    static void (*ApplyMorphsHookFaceNormalsDetour)(void *e, RE::TESActorBase *,
-                                                    RE::BSFaceGenNiNode *) = (void (*)(void *, RE::TESActorBase *,
+    static auto ApplyMorphsHookFaceNormalsDetour = (uintptr_t (*)(void *, RE::TESActorBase *,
                                                                                        RE::BSFaceGenNiNode *)) 0x0;
-    static void ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
-        ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
+    static uintptr_t ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
+        uintptr_t retval = 0x0;
+        retval=ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         if (node && GetUserDataFixed(node)) {
             if (auto actor = GetUserDataFixed(node)->As<RE::Actor>()) {
                 if (actor->Is3DLoaded()) {
@@ -384,12 +387,12 @@ namespace plugin {
                 }
             }
         }
+        return retval;
     }
-    static void (*ApplyMorphHookFaceNormalsDetour)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
-                                                   RE::BSFaceGenNiNode *) = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
+    static auto ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
                                                                                       RE::BSFaceGenNiNode *)) 0x0;
-    static void ApplyMorphHookFaceNormals(void *morphInterface, RE::TESNPC *npc, RE::BGSHeadPart *part, RE::BSFaceGenNiNode *node) {
-        ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
+    static uintptr_t ApplyMorphHookFaceNormals(void *morphInterface, RE::TESNPC *npc, RE::BGSHeadPart *part, RE::BSFaceGenNiNode *node) {
+        uintptr_t retval=ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
         if (node && GetUserDataFixed(node)) {
             if (auto actor = GetUserDataFixed(node)->As<RE::Actor>()) {
                 if (actor->Is3DLoaded()) {
@@ -397,20 +400,20 @@ namespace plugin {
                 }
             }
         }
+        return retval;
     }
-    static void (*ApplyMorphsHookBodyNormalsDetour)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
-                                                    void *arg3) = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,void* arg3))nullptr;
-    static void ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3) {
-        ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, arg2, arg3);
+    static auto ApplyMorphsHookBodyNormalsDetour = (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,void* arg3))nullptr;
+    static uintptr_t ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3) {
+        uintptr_t retval = ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, arg2, arg3);
         if (refr && refr->As<RE::Actor>()) {
             AddActorToRecalculate(refr->As<RE::Actor>());
         }
+        return retval;
     }
-    static void (*UpdateMorphsHook)(void *morphInterface, void* refr,
-                                                    void *arg3) = (void (*)(void *morphInterface,void *refr,
+    static auto UpdateMorphsHook=(uintptr_t (*)(void *morphInterface,void *refr,
                                                                             void *arg3)) 0x0;
-    static void UpdateMorphsHook_fn(void *morphInterface, void* refr, void* arg3) {
-        UpdateMorphsHook(morphInterface, refr, arg3);
+    static uintptr_t UpdateMorphsHook_fn(void *morphInterface, void* refr, void* arg3) {
+        uintptr_t retval=UpdateMorphsHook(morphInterface, refr, arg3);
         if (refr) {
             if (auto actor = ((RE::TESObjectREFR *) refr)->As<RE::Actor>()) {
                 if (actor->Is3DLoaded()) {
@@ -418,6 +421,7 @@ namespace plugin {
                 }
             }
         }
+        return retval;
     }
     void GameEventHandler::onLoad() {
         logger::info("onLoad()");
@@ -482,36 +486,31 @@ namespace plugin {
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
-                    ApplyMorphHookFaceNormalsDetour = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
+                    ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0x5f480);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphHookFaceNormalsDetour, &ApplyMorphHookFaceNormals);
                     DetourTransactionCommit();
                     ApplyMorphsHookFaceNormalsDetour =
-                        (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0x5f9e0);
+                        (uintptr_t (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0x5f9e0);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookFaceNormalsDetour, &ApplyMorphsHookFaceNormals);
                     DetourTransactionCommit();
-                    UpdateMorphsHook = (void (*)(void *, void *, void *))((uint64_t) skee64_info.lpBaseOfDll + 0x51b0);
+                    UpdateMorphsHook = (uintptr_t (*)(void *, void *, void *))((uint64_t) skee64_info.lpBaseOfDll + 0x51b0);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) UpdateMorphsHook, &UpdateMorphsHook_fn);
                     DetourTransactionCommit();
-                    OriginalFaceApplyMorph = (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *,
-                                                       RE::BSFixedString *morphName, float relative)) REL::Offset(0x3d2220)
-                                                 .address();
-                    DetourTransactionBegin();
-                    DetourUpdateThread(GetCurrentThread());
-                    DetourAttach(&(PVOID &) OriginalFaceApplyMorph, &FaceApplyMorphHook);
-                    DetourTransactionCommit();
-                    SliderHook = (void (*)(void *e, float value, uint32_t sliderId))((uint64_t) skee64_info.lpBaseOfDll + 0x3c810);
+                    
+                    SliderHook = (uintptr_t (*)(void *e, float value, uint32_t sliderId))((uint64_t) skee64_info.lpBaseOfDll + 0x3c810);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) SliderHook, &SliderHookDetour);
                     DetourTransactionCommit();
-                    ApplyMorphsHookBodyNormalsDetour = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3))(
+                    ApplyMorphsHookBodyNormalsDetour = (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
+                                                                      void *arg3))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0x73d0);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
@@ -533,31 +532,25 @@ namespace plugin {
 
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x435c50).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x1d4c60;
-                    ApplyMorphHookFaceNormalsDetour = (void (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
+                    ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0xb9480);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphHookFaceNormalsDetour, &ApplyMorphHookFaceNormals);
                     DetourTransactionCommit();
                     ApplyMorphsHookFaceNormalsDetour =
-                        (void (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0xb9a40);
+                        (uintptr_t (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *))((uint64_t) skee64_info.lpBaseOfDll + 0xb9a40);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookFaceNormalsDetour, &ApplyMorphsHookFaceNormals);
                     DetourTransactionCommit();
-                    UpdateMorphsHook = (void (*)(void *, void *, void *))((uint64_t) skee64_info.lpBaseOfDll + 0x167b0);
+                    UpdateMorphsHook = (uintptr_t (*)(void *, void *, void *))((uint64_t) skee64_info.lpBaseOfDll + 0x167b0);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) UpdateMorphsHook, &UpdateMorphsHook_fn);
                     DetourTransactionCommit();
-                    OriginalFaceApplyMorph = (void (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *,
-                                                       RE::BSFixedString *morphName, float relative)) REL::Offset(0x42b610)
-                                                 .address();
-                    DetourTransactionBegin();
-                    DetourUpdateThread(GetCurrentThread());
-                    DetourAttach(&(PVOID &) OriginalFaceApplyMorph, &FaceApplyMorphHook);
-                    DetourTransactionCommit();
-                    ApplyMorphsHookBodyNormalsDetour = (void (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3))(
+                    ApplyMorphsHookBodyNormalsDetour = (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
+                                                                      void *arg3))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0x1b890);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
