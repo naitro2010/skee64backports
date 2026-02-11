@@ -62,67 +62,62 @@ namespace plugin {
     std::recursive_mutex recalcs_in_progress_lock;
     std::unordered_map<RE::FormID,RecalcProgressData> recalcs_in_progress;
     uint64_t recalc_tasks_started = 0;
-    static void ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> geo) {
+    static RE::NiSkinPartition * ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry>& geo) {
         if (GetUserDataFixed(geo.get()) == nullptr) {
             logger::info("geometry doesn't have user data");
-            return;
+            return nullptr;
         }
         if (!geo->parent) {
             logger::info("geometry has no parent");
-            return;
+            return nullptr;
         }
-        if (geo->GetRefCount() <= 1) {
-            logger::info("geometry not referenced");
-            return;
+        logger::info("old geo ref count before recalc {} {}", geo->name.c_str(), geo->GetRefCount());
+        if (geo->GetRefCount() <= 2) {
+            logger::info("geometry not referenced by anything else");
+            return nullptr;
         }
         if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
-            return;
+            return nullptr;
         }
         if (geo->GetGeometryRuntimeData().skinInstance->skinPartition == nullptr) {
-            return;
+            return nullptr;
         }
         if ((!geo->GetGeometryRuntimeData().vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_NORMAL)) &&
             (!geo->GetGeometryRuntimeData().vertexDesc.HasFlag(RE::BSGraphics::Vertex::VF_TANGENT))) {
-            return;
+            return nullptr;
         }
         if (!geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect] ||
             !geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect]->GetRTTI()->IsKindOf(
                 (RE::NiRTTI *) RE::BSShaderProperty::Ni_RTTI.address())) {
-            return;
+            return nullptr;
         }
         RE::BSShaderProperty *property =
             (RE::BSShaderProperty *) geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
         auto material = property->material;
         if (!material) {
-            return;
+            return nullptr;
         }
-        RE::NiPointer<RE::NiObject> newPartition = nullptr;
-        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
-        if (!newPartition) {
-            return;
-        }
-        RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
-            RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
+        
+        RE::NiPointer<RE::NiSkinPartition> newSkinPartition = geo->GetGeometryRuntimeData().skinInstance->skinPartition;
         
         if (newSkinPartition->partitions.size() == 0) {
-            newSkinPartition->DecRefCount();
-            return;
+            return nullptr;
         }
-        logger::info("new skin partition ref count {}",newSkinPartition->GetRefCount());
-        logger::info("old skin instance ref count {}", geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
+
         {
             NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo.get()), newSkinPartition);
             applicator.Apply();
             for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
                 auto &pPartition = newSkinPartition->partitions[p];
                 memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
-                       newSkinPartition->vertexCount * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+                       ((size_t)newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
             }
+            logger::info("new skin partition ref count before update {} {}", geo->name.c_str(), newSkinPartition->GetRefCount());
+            logger::info("old skin instance ref count before update {} {}", geo->name.c_str(),
+                         geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
             uint64_t UpdateSkinPartition_object[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
             UpdateSkinPartition_object[0] = NIOVTaskUpdateSkinPartitionvtable;
-            geo->GetGeometryRuntimeData().skinInstance->IncRefCount(); // skee64 decrements ref count with NiPointer destructor
             uint64_t *skinInstPtr = (uint64_t *) (geo->GetGeometryRuntimeData().skinInstance.get());
-            newSkinPartition->IncRefCount();// skee64 decrements ref count with NiPointer destructor
             uint64_t *skinPartPtr = (uint64_t *) (newSkinPartition.get());
             UpdateSkinPartition_object[1] = (uint64_t) skinPartPtr;
             UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
@@ -130,9 +125,10 @@ namespace plugin {
             RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
             property->SetupGeometry(geo.get());
             property->FinishSetupGeometry(geo.get());
-            newSkinPartition->DecRefCount();
-            logger::info("new skin partition ref count after update {}", newSkinPartition->GetRefCount());
-            logger::info("old skin instance ref count after update {}", geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
+            logger::info("new skin partition ref count after update {} {}", geo->name.c_str(),newSkinPartition->GetRefCount());
+            logger::info("old skin instance ref count after update {} {}", geo->name.c_str(),
+                         geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
+            return (RE::NiSkinPartition*)skinPartPtr;
         }
     }
     static void WalkRecalculateNormals(RE::FormID actor_id,RE::NiNode *node, std::vector<std::jthread> &spawned_threads, RecalcProgressData& progress_data) {
@@ -286,8 +282,14 @@ namespace plugin {
                                     recalcs_in_progress.erase(actor_id);
                                     return;
                                 } else {
-                                    auto g = rd.geo_queue.front();
-                                    ProcessRecalcQueue(g);
+                                    auto &g = rd.geo_queue.front();
+                                    
+                                    auto nsp = ProcessRecalcQueue(g);
+
+                                    if (nsp) {
+                                        logger::info("new skin partition ref count after return {} {}", g->name.c_str(),
+                                                     nsp->GetRefCount());
+                                    }
                                     rd.geo_queue.pop();
                                 }
                             };
