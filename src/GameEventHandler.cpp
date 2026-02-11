@@ -223,9 +223,11 @@ namespace plugin {
                                 data.geo_queue = std::queue<RE::NiPointer<RE::BSGeometry>>();
                                 recalcs_in_progress.insert_or_assign(p.first, data);
                             }
-                            
                             auto &data = recalcs_in_progress[p.first];
                             if (auto actor = p.second.get()) {
+                                if (!actor->Is3DLoaded()) {
+                                    actor->Load3D(false);
+                                }
                                 if (actor->Is3DLoaded()) {
                                     if (auto obj = actor->Get3D1(true)) {
                                         if (actor->Get3D1(true) != actor->Get3D1(false)) {
@@ -425,18 +427,24 @@ namespace plugin {
     void GameEventHandler::onPostLoad() {
         logger::info("onPostLoad()");
     }
-    
-    class CellRecalculate : public RE::BSTEventSink<RE::TESCellAttachDetachEvent> {
-            RE::BSEventNotifyControl ProcessEvent(const RE::TESCellAttachDetachEvent *a_event,
-                                                  RE::BSTEventSource<RE::TESCellAttachDetachEvent> *a_eventSource) {
-                if (a_event && a_event->reference && a_event->reference.get()->Is3DLoaded()) {
-                    if (auto actor = a_event->reference.get()->As<RE::Actor>()) {
-                        if (a_event->attached==false) {
+    class CellRecalculate : public RE::BSTEventSink<RE::TESCellFullyLoadedEvent> {
+            RE::BSEventNotifyControl ProcessEvent(const RE::TESCellFullyLoadedEvent *a_event,
+                                                  RE::BSTEventSource<RE::TESCellFullyLoadedEvent> *a_eventSource) {
+                if (a_event && a_event->cell) {
+                    a_event->cell->ForEachReference([](RE::TESObjectREFR *ref) { 
+                        if (auto actor = ref->As<RE::Actor>()) {
+                            if (!actor->Is3DLoaded() == false) {
+                                actor->Load3D(true);
+                            }
                             if (RE::PlayerCharacter::GetSingleton()) {
+
                                 AddActorToRecalculate(actor);
                             }
-                        }
-                    }
+                            
+                        }           
+                        return RE::BSContainer::ForEachResult::kContinue;
+                    });
+                    
                 }
 
                 return RE::BSEventNotifyControl::kContinue;
@@ -514,7 +522,7 @@ namespace plugin {
                         recalchook = new Update3DModelRecalculate();
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
                         recalchook2 = new CellRecalculate();
-                        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESCellAttachDetachEvent>(recalchook2);
+                        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESCellFullyLoadedEvent>(recalchook2);
                     }
                 }
                 uint8_t signature1170[] = {0xff, 0x90, 0xf0, 0x03, 0x00, 0x00};
@@ -590,7 +598,7 @@ namespace plugin {
                         recalchook = new Update3DModelRecalculate();
                         SKSE::GetNiNodeUpdateEventSource()->AddEventSink<SKSE::NiNodeUpdateEvent>(recalchook);
                         recalchook2 = new CellRecalculate();
-                        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESCellAttachDetachEvent>(recalchook2);
+                        RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink<RE::TESCellFullyLoadedEvent>(recalchook2);
                     }
                 }
             }
