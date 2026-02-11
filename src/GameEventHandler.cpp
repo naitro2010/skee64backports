@@ -64,6 +64,11 @@ namespace plugin {
     uint64_t recalc_tasks_started = 0;
     static void ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> geo) {
         if (GetUserDataFixed(geo.get()) == nullptr) {
+            logger::info("geometry doesn't have user data");
+            return;
+        }
+        if (geo->GetRefCount() <= 1) {
+            logger::info("geometry not referenced");
             return;
         }
         if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
