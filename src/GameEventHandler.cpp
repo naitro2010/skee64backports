@@ -123,8 +123,8 @@ namespace plugin {
             UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
             auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
             RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
-            property->SetupGeometry(geo.get());
-            property->FinishSetupGeometry(geo.get());
+            //property->SetupGeometry(geo.get());
+            //property->FinishSetupGeometry(geo.get());
             logger::info("new skin partition ref count after update {} {}", geo->name.c_str(),newSkinPartition->GetRefCount());
             logger::info("old skin instance ref count after update {} {}", geo->name.c_str(),
                          geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
@@ -486,7 +486,7 @@ namespace plugin {
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
-                    /*
+                    
                     ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0x5f480);
                     DetourTransactionBegin();
@@ -517,7 +517,7 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
-                    */
+                    
                     logger::info("SKEE64 1597 normal recaclulation backported");
                     if (recalchook == nullptr) {
                         recalchook = new Update3DModelRecalculate();
