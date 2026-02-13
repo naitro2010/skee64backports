@@ -60,9 +60,9 @@ namespace plugin {
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<RE::FormID, RE::ActorHandle> queued_recalcs;
     std::recursive_mutex recalcs_in_progress_lock;
-    std::unordered_map<RE::FormID,RecalcProgressData> recalcs_in_progress;
+    std::unordered_map<RE::FormID, RecalcProgressData> recalcs_in_progress;
     uint64_t recalc_tasks_started = 0;
-    static RE::NiSkinPartition * ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry>& geo) {
+    static RE::NiSkinPartition *ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> &geo) {
         if (GetUserDataFixed(geo.get()) == nullptr) {
             logger::info("geometry doesn't have user data");
             return nullptr;
@@ -97,9 +97,9 @@ namespace plugin {
         if (!material) {
             return nullptr;
         }
-        
+
         RE::NiPointer<RE::NiSkinPartition> newSkinPartition = geo->GetGeometryRuntimeData().skinInstance->skinPartition;
-        
+
         if (newSkinPartition->partitions.size() == 0) {
             return nullptr;
         }
@@ -110,7 +110,7 @@ namespace plugin {
             for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
                 auto &pPartition = newSkinPartition->partitions[p];
                 memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
-                       ((size_t)newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+                       ((size_t) newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
             }
             logger::info("new skin partition ref count before update {} {}", geo->name.c_str(), newSkinPartition->GetRefCount());
             logger::info("old skin instance ref count before update {} {}", geo->name.c_str(),
@@ -123,15 +123,14 @@ namespace plugin {
             UpdateSkinPartition_object[2] = (uint64_t) skinInstPtr;
             auto RunNIOVTaskUpdateSkinPartition = ((void (*)(uint64_t *))((uint64_t *) UpdateSkinPartition_object[0])[0]);
             RunNIOVTaskUpdateSkinPartition(UpdateSkinPartition_object);
-            //property->SetupGeometry(geo.get());
-            //property->FinishSetupGeometry(geo.get());
-            logger::info("new skin partition ref count after update {} {}", geo->name.c_str(),newSkinPartition->GetRefCount());
+            logger::info("new skin partition ref count after update {} {}", geo->name.c_str(), newSkinPartition->GetRefCount());
             logger::info("old skin instance ref count after update {} {}", geo->name.c_str(),
                          geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
-            return (RE::NiSkinPartition*)skinPartPtr;
+            return (RE::NiSkinPartition *) skinPartPtr;
         }
     }
-    static void WalkRecalculateNormals(RE::FormID actor_id,RE::NiNode *node, std::vector<std::jthread> &spawned_threads, RecalcProgressData& progress_data) {
+    static void WalkRecalculateNormals(RE::FormID actor_id, RE::NiNode *node, std::vector<std::jthread> &spawned_threads,
+                                       RecalcProgressData &progress_data) {
         if (node == nullptr) {
             return;
         }
@@ -140,7 +139,7 @@ namespace plugin {
                 continue;
             }
             if (auto c_node = obj->AsNode()) {
-                WalkRecalculateNormals(actor_id,c_node,spawned_threads,progress_data);
+                WalkRecalculateNormals(actor_id, c_node, spawned_threads, progress_data);
             }
             if (auto geo = obj->AsGeometry()) {
                 if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
@@ -167,7 +166,6 @@ namespace plugin {
                 if (!property->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals)) {
                     std::lock_guard rl(recalcs_in_progress_lock);
                     progress_data.geo_queue.push(RE::NiPointer(geo));
-
                 }
             }
         }
@@ -189,19 +187,17 @@ namespace plugin {
 
         if (original_size == 0) {
             std::thread t([]() {
-                while (true)
-                { 
+                while (true) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(normal_delay_milliseconds));
                     {
                         std::lock_guard rl(recalcs_in_progress_lock);
-                        if (recalc_tasks_started == 0 && recalcs_in_progress.size()==0) {
+                        if (recalc_tasks_started == 0 && recalcs_in_progress.size() == 0) {
                             recalc_tasks_started = 1;
                             break;
                         }
                     }
                 }
                 SKSE::GetTaskInterface()->AddTask([]() {
-
                     auto processing_start_time = std::chrono::high_resolution_clock::now();
                     std::unordered_map<RE::FormID, RE::ActorHandle> temp_recalcs;
                     {
@@ -213,7 +209,7 @@ namespace plugin {
                         std::vector<std::jthread> spawned_threads1;
                         std::vector<std::jthread> spawned_threads2;
                         std::vector<std::jthread> spawned_threads3;
-                        
+
                         for (auto p: temp_recalcs) {
                             std::lock_guard rl(recalcs_in_progress_lock);
                             {
@@ -232,18 +228,18 @@ namespace plugin {
                                     if (auto obj = actor->Get3D1(true)) {
                                         if (actor->Get3D1(true) != actor->Get3D1(false)) {
                                             if (auto node = obj->AsNode()) {
-                                                WalkRecalculateNormals(p.first,node,spawned_threads1,data);
+                                                WalkRecalculateNormals(p.first, node, spawned_threads1, data);
                                             }
                                         }
                                     }
                                 }
                             }
-                            
+
                             if (auto actor = p.second.get()) {
                                 if (actor->Is3DLoaded()) {
                                     if (auto obj = actor->Get3D1(false)) {
                                         if (auto node = obj->AsNode()) {
-                                            WalkRecalculateNormals(p.first, node, spawned_threads2,data);
+                                            WalkRecalculateNormals(p.first, node, spawned_threads2, data);
                                         }
                                     }
                                 }
@@ -251,7 +247,7 @@ namespace plugin {
                             if (auto actor = p.second.get()) {
                                 if (actor->Is3DLoaded()) {
                                     if (auto facenode = actor->GetFaceNodeSkinned()) {
-                                        WalkRecalculateNormals(p.first, facenode, spawned_threads3,data);
+                                        WalkRecalculateNormals(p.first, facenode, spawned_threads3, data);
                                     }
                                 }
                             }
@@ -270,7 +266,7 @@ namespace plugin {
                                         }
                                     } else {
                                         recalcs_in_progress.erase(actor_id);
-                                        return;                                        
+                                        return;
                                     }
                                     if ((actor->Is3DLoaded() == false) || actor->IsDeleted() || actor->IsDisabled()) {
                                         recalcs_in_progress.erase(actor_id);
@@ -285,7 +281,7 @@ namespace plugin {
                                     return;
                                 } else {
                                     auto &g = rd.geo_queue.front();
-                                    
+
                                     auto nsp = ProcessRecalcQueue(g);
 
                                     if (nsp) {
@@ -295,41 +291,35 @@ namespace plugin {
                                     rd.geo_queue.pop();
                                 }
                             };
-                                std::thread t([actor_id, process_function]() {
-                                    std::atomic_bool completed;
-                                    while (true) {
-                                        {
-                                            std::lock_guard rl(recalcs_in_progress_lock);
-                                            if (!recalcs_in_progress.contains(actor_id)) {
+                            std::thread t([actor_id, process_function]() {
+                                std::atomic_bool completed;
+                                while (true) {
+                                    {
+                                        std::lock_guard rl(recalcs_in_progress_lock);
+                                        if (!recalcs_in_progress.contains(actor_id)) {
+                                            return;
+                                        }
+                                        auto &rd = recalcs_in_progress[actor_id];
+                                        if (auto actor = rd.actor_handle.get()) {
+                                            if ((actor->Is3DLoaded() == false) || actor->IsDeleted() || actor->IsDisabled()) {
+                                                recalcs_in_progress.erase(actor_id);
                                                 return;
                                             }
-                                            auto &rd = recalcs_in_progress[actor_id];
-                                            if (auto actor = rd.actor_handle.get()) {
-                                                if ((actor->Is3DLoaded() == false) || actor->IsDeleted() || actor->IsDisabled()) {
-                                                    recalcs_in_progress.erase(actor_id);
-                                                    return;
-                                                }
-                                            }
                                         }
-                                        std::this_thread::sleep_for(std::chrono::milliseconds(8));
-                                        SKSE::GetTaskInterface()->AddTask([actor_id, process_function,&completed]() {
-                                            process_function(actor_id);
-                                            completed.store(true);
-                                        });
-                                        while (completed.load() != true) {
-                                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                                        }
-                                        completed.store(false);
-                                        
                                     }
-                                });
-                                t.detach();
-                            
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(8));
+                                    SKSE::GetTaskInterface()->AddTask([actor_id, process_function, &completed]() {
+                                        process_function(actor_id);
+                                        completed.store(true);
+                                    });
+                                    while (completed.load() != true) {
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                    }
+                                    completed.store(false);
+                                }
+                            });
+                            t.detach();
                         }
-                        
-
-
-                        
                     }
                     {
                         std::lock_guard rl(recalcs_in_progress_lock);
@@ -344,9 +334,8 @@ namespace plugin {
         (uintptr_t (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *, RE::BSFixedString *morphName, float relative)) nullptr;
 
     static uintptr_t FaceApplyMorphHook(RE::BSFaceGenManager *fg_m, RE::BSFaceGenNiNode *fg_node, RE::TESNPC *npc,
-                                        RE::BSFixedString *morphName,
-                                   float relative) {
-        uintptr_t retval= OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
+                                        RE::BSFixedString *morphName, float relative) {
+        uintptr_t retval = OriginalFaceApplyMorph(fg_m, fg_node, npc, morphName, relative);
         if (morphName) {
             if (fg_node) {
                 if (npc) {
@@ -362,7 +351,6 @@ namespace plugin {
             }
         }
         return retval;
-
     }
     static auto SliderHook = (uintptr_t (*)(void *e, float value, uint32_t sliderId)) 0x0;
     static uintptr_t SliderHookDetour(void *e, float value, uint32_t sliderId) {
@@ -370,16 +358,15 @@ namespace plugin {
         {
             std::lock_guard<std::recursive_mutex> l(preset_mutex);
             applying_slider = true;
-            retval=SliderHook(e, value, sliderId);
+            retval = SliderHook(e, value, sliderId);
             applying_slider = false;
         }
         return retval;
     }
-    static auto ApplyMorphsHookFaceNormalsDetour = (uintptr_t (*)(void *, RE::TESActorBase *,
-                                                                                       RE::BSFaceGenNiNode *)) 0x0;
+    static auto ApplyMorphsHookFaceNormalsDetour = (uintptr_t (*)(void *, RE::TESActorBase *, RE::BSFaceGenNiNode *)) 0x0;
     static uintptr_t ApplyMorphsHookFaceNormals(void *morphInterface, RE::TESActorBase *base, RE::BSFaceGenNiNode *node) {
         uintptr_t retval = 0x0;
-        retval=ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
+        retval = ApplyMorphsHookFaceNormalsDetour(morphInterface, base, node);
         if (node && GetUserDataFixed(node)) {
             if (auto actor = GetUserDataFixed(node)->As<RE::Actor>()) {
                 if (actor->Is3DLoaded()) {
@@ -389,10 +376,9 @@ namespace plugin {
         }
         return retval;
     }
-    static auto ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *,
-                                                                                      RE::BSFaceGenNiNode *)) 0x0;
+    static auto ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *)) 0x0;
     static uintptr_t ApplyMorphHookFaceNormals(void *morphInterface, RE::TESNPC *npc, RE::BGSHeadPart *part, RE::BSFaceGenNiNode *node) {
-        uintptr_t retval=ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
+        uintptr_t retval = ApplyMorphHookFaceNormalsDetour(morphInterface, npc, part, node);
         if (node && GetUserDataFixed(node)) {
             if (auto actor = GetUserDataFixed(node)->As<RE::Actor>()) {
                 if (actor->Is3DLoaded()) {
@@ -402,7 +388,8 @@ namespace plugin {
         }
         return retval;
     }
-    static auto ApplyMorphsHookBodyNormalsDetour = (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,void* arg3))nullptr;
+    static auto ApplyMorphsHookBodyNormalsDetour =
+        (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3)) nullptr;
     static uintptr_t ApplyMorphsHookBodyNormals(void *morphInterface, RE::TESObjectREFR *refr, void *arg2, void *arg3) {
         uintptr_t retval = ApplyMorphsHookBodyNormalsDetour(morphInterface, refr, arg2, arg3);
         if (refr && refr->As<RE::Actor>()) {
@@ -410,10 +397,9 @@ namespace plugin {
         }
         return retval;
     }
-    static auto UpdateMorphsHook=(uintptr_t (*)(void *morphInterface,void *refr,
-                                                                            void *arg3)) 0x0;
-    static uintptr_t UpdateMorphsHook_fn(void *morphInterface, void* refr, void* arg3) {
-        uintptr_t retval=UpdateMorphsHook(morphInterface, refr, arg3);
+    static auto UpdateMorphsHook = (uintptr_t (*)(void *morphInterface, void *refr, void *arg3)) 0x0;
+    static uintptr_t UpdateMorphsHook_fn(void *morphInterface, void *refr, void *arg3) {
+        uintptr_t retval = UpdateMorphsHook(morphInterface, refr, arg3);
         if (refr) {
             if (auto actor = ((RE::TESObjectREFR *) refr)->As<RE::Actor>()) {
                 if (actor->Is3DLoaded()) {
@@ -435,20 +421,17 @@ namespace plugin {
             RE::BSEventNotifyControl ProcessEvent(const RE::TESCellFullyLoadedEvent *a_event,
                                                   RE::BSTEventSource<RE::TESCellFullyLoadedEvent> *a_eventSource) {
                 if (a_event && a_event->cell) {
-                    a_event->cell->ForEachReference([](RE::TESObjectREFR *ref) { 
+                    a_event->cell->ForEachReference([](RE::TESObjectREFR *ref) {
                         if (auto actor = ref->As<RE::Actor>()) {
                             if (!actor->Is3DLoaded() == false) {
                                 actor->Load3D(true);
                             }
                             if (RE::PlayerCharacter::GetSingleton()) {
-
                                 AddActorToRecalculate(actor);
                             }
-                            
-                        }           
+                        }
                         return RE::BSContainer::ForEachResult::kContinue;
                     });
-                    
                 }
 
                 return RE::BSEventNotifyControl::kContinue;
@@ -474,7 +457,7 @@ namespace plugin {
         mINI::INIStructure ini;
         file.read(ini);
         normal_delay_milliseconds = std::stoul(ini["SKEEBackports"]["normal_delay_milliseconds"]);
-        
+
         task_pool_ptr = (bool (*)(void)) REL::VariantID(38079, 39033, 0x6488a0).address();
         if (HMODULE handle = GetModuleHandleA("skee64.dll")) {
             MODULEINFO skee64_info;
@@ -486,7 +469,6 @@ namespace plugin {
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
-                    
                     ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0x5f480);
                     DetourTransactionBegin();
@@ -504,20 +486,24 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) UpdateMorphsHook, &UpdateMorphsHook_fn);
                     DetourTransactionCommit();
-                    
+                    OriginalFaceApplyMorph = (uintptr_t (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *,
+                                                       RE::BSFixedString *morphName, float relative)) REL::Offset(0x3d2220)
+                                                 .address();
+                    DetourTransactionBegin();
+                    DetourUpdateThread(GetCurrentThread());
+                    DetourAttach(&(PVOID &) OriginalFaceApplyMorph, &FaceApplyMorphHook);
+                    DetourTransactionCommit();
                     SliderHook = (uintptr_t (*)(void *e, float value, uint32_t sliderId))((uint64_t) skee64_info.lpBaseOfDll + 0x3c810);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) SliderHook, &SliderHookDetour);
                     DetourTransactionCommit();
                     ApplyMorphsHookBodyNormalsDetour = (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
-                                                                      void *arg3))(
-                        (uint64_t) skee64_info.lpBaseOfDll + 0x73d0);
+                                                                      void *arg3))((uint64_t) skee64_info.lpBaseOfDll + 0x73d0);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
-                    
                     logger::info("SKEE64 1597 normal recaclulation backported");
                     if (recalchook == nullptr) {
                         recalchook = new Update3DModelRecalculate();
@@ -530,11 +516,8 @@ namespace plugin {
                 if ((skee64_info.SizeOfImage >= 0xc2950 + 0x40) &&
                     memcmp(signature1170, (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0xc2950 + (uintptr_t) 0x28),
                            sizeof(signature1170)) == 0) {
-
-
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x435c50).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x1d4c60;
-                    /*
                     ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0xb9480);
                     DetourTransactionBegin();
@@ -553,14 +536,19 @@ namespace plugin {
                     DetourAttach(&(PVOID &) UpdateMorphsHook, &UpdateMorphsHook_fn);
                     DetourTransactionCommit();
                     ApplyMorphsHookBodyNormalsDetour = (uintptr_t (*)(void *morphInterface, RE::TESObjectREFR *refr, void *arg2,
-                                                                      void *arg3))(
-                        (uint64_t) skee64_info.lpBaseOfDll + 0x1b890);
+                                                                      void *arg3))((uint64_t) skee64_info.lpBaseOfDll + 0x1b890);
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
                     applying_slider = false;
-                    */
+                    OriginalFaceApplyMorph = (uintptr_t (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *,
+                                                       RE::BSFixedString *morphName, float relative)) REL::Offset(0x42b610)
+                                                 .address();
+                    DetourTransactionBegin();
+                    DetourUpdateThread(GetCurrentThread());
+                    DetourAttach(&(PVOID &) OriginalFaceApplyMorph, &FaceApplyMorphHook);
+                    DetourTransactionCommit();
                     /*
                     UpdateMorphsHookBodyDetour =
                         (void (*)(void *, RE::TESObjectREFR *, bool))((uint64_t) skee64_info.lpBaseOfDll + 0x167b0);
