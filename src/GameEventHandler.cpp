@@ -100,17 +100,19 @@ namespace plugin {
 
         RE::NiPointer<RE::NiSkinPartition> newSkinPartition = geo->GetGeometryRuntimeData().skinInstance->skinPartition;
 
-        if (newSkinPartition->partitions.size() == 0) {
+        if (newSkinPartition->partitions.size() == 0 || newSkinPartition->numPartitions==0) {
             return nullptr;
         }
 
         {
             NormalApplicatorBackported applicator(RE::NiPointer<RE::BSGeometry>((RE::BSGeometry *) geo.get()), newSkinPartition);
             applicator.Apply();
-            for (uint32_t p = 1; p < newSkinPartition->partitions.size(); ++p) {
-                auto &pPartition = newSkinPartition->partitions[p];
-                memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
-                       ((size_t) newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+            if (newSkinPartition->numPartitions > 1) {
+                for (uint32_t p = 1; p < newSkinPartition->numPartitions; ++p) {
+                    auto &pPartition = newSkinPartition->partitions[p];
+                    memcpy(pPartition.buffData->rawVertexData, newSkinPartition->partitions[0].buffData->rawVertexData,
+                           ((size_t) newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
+                }
             }
             logger::info("new skin partition ref count before update {} {}", geo->name.c_str(), newSkinPartition->GetRefCount());
             logger::info("old skin instance ref count before update {} {}", geo->name.c_str(),

@@ -21,7 +21,7 @@ void NormalApplicatorBackported::Apply() {
     RE::BSTriShape* triShape = ni_cast(geometry, BSTriShape);
 
     if (dynamicTriShape)
-        dynamicTriShape->IncRefCount();
+        dynamicTriShape->GetDynamicTrishapeRuntimeData().lock.Lock();
 
     RE::NiIntegersExtraData* extraData = static_cast<RE::NiIntegersExtraData*>(geometry->GetExtraData("LOCKEDNORM"));
     if (extraData) {
@@ -146,7 +146,7 @@ void NormalApplicatorBackported::Apply() {
     }
 
     if (dynamicTriShape)
-        dynamicTriShape->DecRefCount();
+        dynamicTriShape->GetDynamicTrishapeRuntimeData().lock.Unlock();
 }
 
 void NormalApplicatorBackported::RecalcNormals(UInt32 numTriangles, Morpher::Triangle* triangles, const bool smooth, const float smoothThresh) {
