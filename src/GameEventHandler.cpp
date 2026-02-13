@@ -227,6 +227,9 @@ namespace plugin {
                                     actor->Load3D(false);
                                 }
                                 if (actor->Is3DLoaded()) {
+                                    if (auto face = actor->GetFaceNode()) {
+                                        UpdateFaceModel(face);
+                                    }
                                     if (auto obj = actor->Get3D1(true)) {
                                         if (actor->Get3D1(true) != actor->Get3D1(false)) {
                                             if (auto node = obj->AsNode()) {
