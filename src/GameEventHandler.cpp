@@ -486,6 +486,7 @@ namespace plugin {
                     memcmp("BODYTRI", (void *) ((uintptr_t) skee64_info.lpBaseOfDll + (uintptr_t) 0x16b478), 7) == 0) {
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x3dbda0).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x16d118;
+                    /*
                     ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0x5f480);
                     DetourTransactionBegin();
@@ -516,6 +517,7 @@ namespace plugin {
                     DetourUpdateThread(GetCurrentThread());
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
+                    */
                     logger::info("SKEE64 1597 normal recaclulation backported");
                     if (recalchook == nullptr) {
                         recalchook = new Update3DModelRecalculate();
@@ -532,6 +534,7 @@ namespace plugin {
 
                     UpdateFaceModel = (void (*)(RE::NiNode *)) REL::Offset(0x435c50).address();
                     NIOVTaskUpdateSkinPartitionvtable = (uint64_t) skee64_info.lpBaseOfDll + 0x1d4c60;
+                    /*
                     ApplyMorphHookFaceNormalsDetour = (uintptr_t (*)(void *e, RE::TESNPC *, RE::BGSHeadPart *, RE::BSFaceGenNiNode *))(
                         (uint64_t) skee64_info.lpBaseOfDll + 0xb9480);
                     DetourTransactionBegin();
@@ -557,6 +560,7 @@ namespace plugin {
                     DetourAttach(&(PVOID &) ApplyMorphsHookBodyNormalsDetour, &ApplyMorphsHookBodyNormals);
                     DetourTransactionCommit();
                     applying_slider = false;
+                    */
                     /*
                     UpdateMorphsHookBodyDetour =
                         (void (*)(void *, RE::TESObjectREFR *, bool))((uint64_t) skee64_info.lpBaseOfDll + 0x167b0);
