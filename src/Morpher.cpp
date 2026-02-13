@@ -30,7 +30,7 @@ void NormalApplicatorBackported::Apply() {
         }
     }
 
-    auto vertexDesc = geometry->GetGeometryRuntimeData().vertexDesc;
+    auto vertexDesc = skinPartition->partitions[0].vertexDesc;
     UInt32 numVertices = triShape ? triShape->GetTrishapeRuntimeData().vertexCount : 0;
 
     bool hasVertices = (vertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_VERTEX));
