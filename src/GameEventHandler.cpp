@@ -13,6 +13,8 @@
 #include "Morpher.h"
 #include "ini.h"
 namespace plugin {
+    auto ubeonly = false;
+    auto nooverlaynormals = false;
 #undef GetObject
     static uint64_t NIOVTaskUpdateSkinPartitionvtable = 0x0;
     static uint32_t multi_morph_tasks_scheduled = 0;
@@ -140,6 +142,14 @@ namespace plugin {
             if (obj == nullptr) {
                 continue;
             }
+            if (nooverlaynormals == true) {
+                std::string obj_name_lower = obj->name.c_str();
+                std::transform(obj_name_lower.begin(), obj_name_lower.end(), obj_name_lower.begin(),
+                               [](unsigned char c) { return std::tolower(c); });
+                if (obj_name_lower.contains("[ovl") || obj_name_lower.contains("[sovl")) {
+                    continue;
+                }
+            }
             if (auto c_node = obj->AsNode()) {
                 WalkRecalculateNormals(actor_id, c_node, spawned_threads, progress_data);
             }
@@ -223,39 +233,57 @@ namespace plugin {
                             }
                             auto &data = recalcs_in_progress[p.first];
                             if (auto actor = p.second.get()) {
+                                
                                 if (!actor->Is3DLoaded()) {
                                     actor->Load3D(false);
                                 }
                                 if (actor->Is3DLoaded()) {
-                                    if (auto face = actor->GetFaceNode()) {
-                                        //UpdateFaceModel(face);
-                                    }
-                                    if (auto obj = actor->Get3D1(true)) {
-                                        if (actor->Get3D1(true) != actor->Get3D1(false)) {
-                                            if (auto node = obj->AsNode()) {
-                                                WalkRecalculateNormals(p.first, node, spawned_threads1, data);
+                                    if (auto actor_biped = actor->GetCurrentBiped()) {
+                                        bool found_ube = false;
+                                        if (ubeonly == true) {
+                                            
+                                            for (auto &obj: actor_biped->objects) {
+                                                if (obj.addon) {
+                                                    if (auto name = obj.addon->GetName()) {
+                                                        std::string addon_name_lower = name;
+                                                        std::transform(addon_name_lower.begin(), addon_name_lower.end(),
+                                                                       addon_name_lower.begin(),
+                                                                       [](unsigned char c) { return std::tolower(c); });
+                                                        if (addon_name_lower.starts_with("!ube")) {
+                                                        
+                                                            found_ube = true;
+                                                        
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (found_ube || !ubeonly) {
+                                            if (auto obj = actor->Get3D1(true)) {
+                                                if (actor->Get3D1(true) != actor->Get3D1(false)) {
+                                                    if (auto node = obj->AsNode()) {
+                                                        WalkRecalculateNormals(p.first, node, spawned_threads1, data);
+                                                    }
+                                                }
+                                            }
+
+                                            if (actor->Is3DLoaded()) {
+                                                if (auto obj = actor->Get3D1(false)) {
+                                                    if (auto node = obj->AsNode()) {
+                                                        WalkRecalculateNormals(p.first, node, spawned_threads2, data);
+                                                    }
+                                                }
+                                            }
+                                            if (actor->Is3DLoaded()) {
+                                                if (auto facenode = actor->GetFaceNode()) {
+                                                    WalkRecalculateNormals(p.first, facenode, spawned_threads3, data);
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-
-                            if (auto actor = p.second.get()) {
-                                if (actor->Is3DLoaded()) {
-                                    if (auto obj = actor->Get3D1(false)) {
-                                        if (auto node = obj->AsNode()) {
-                                            WalkRecalculateNormals(p.first, node, spawned_threads2, data);
-                                        }
-                                    }
-                                }
-                            }
-                            if (auto actor = p.second.get()) {
-                                if (actor->Is3DLoaded()) {
-                                    if (auto facenode = actor->GetFaceNodeSkinned()) {
-                                        WalkRecalculateNormals(p.first, facenode, spawned_threads3, data);
-                                    }
-                                }
-                            }
+                            
                             RE::FormID actor_id = p.first;
                             auto process_function = [](RE::FormID actor_id) {
                                 std::lock_guard rl(recalcs_in_progress_lock);
@@ -457,12 +485,18 @@ namespace plugin {
     Update3DModelRecalculate *recalchook = nullptr;
     CellRecalculate *recalchook2 = nullptr;
     static std::atomic<uint32_t> skee_loaded = 0;
+    
     void GameEventHandler::onPostPostLoad() {
         mINI::INIFile file("Data\\skse\\plugins\\skee64backports.ini");
         mINI::INIStructure ini;
         file.read(ini);
         normal_delay_milliseconds = std::stoul(ini["SKEEBackports"]["normal_delay_milliseconds"]);
-
+        if (ini["SKEEBackports"]["ubeonly"] == "true") {
+            ubeonly = true;
+        }
+        if (ini["SKEEBackports"]["nooverlaynormals"] == "true") {
+            nooverlaynormals = true;
+        }
         task_pool_ptr = (bool (*)(void)) REL::VariantID(38079, 39033, 0x6488a0).address();
         if (HMODULE handle = GetModuleHandleA("skee64.dll")) {
             MODULEINFO skee64_info;
