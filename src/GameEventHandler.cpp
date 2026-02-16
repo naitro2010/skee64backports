@@ -242,7 +242,7 @@ namespace plugin {
                                         bool found_ube = false;
                                         if (ubeonly == true) {
                                             
-                                            for (auto &obj: actor_biped->objects) {
+                                            for (auto &obj: actor_biped->bufferedObjects) {
                                                 if (obj.addon) {
                                                     if (auto name = obj.addon->GetName()) {
                                                         std::string addon_name_lower = name;
@@ -253,6 +253,19 @@ namespace plugin {
                                                         
                                                             found_ube = true;
                                                         
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            for (auto &obj: actor_biped->objects) {
+                                                if (obj.addon) {
+                                                    if (auto name = obj.addon->GetName()) {
+                                                        std::string addon_name_lower = name;
+                                                        std::transform(addon_name_lower.begin(), addon_name_lower.end(),
+                                                                       addon_name_lower.begin(),
+                                                                       [](unsigned char c) { return std::tolower(c); });
+                                                        if (addon_name_lower.starts_with("!ube")) {
+                                                            found_ube = true;
                                                         }
                                                     }
                                                 }
