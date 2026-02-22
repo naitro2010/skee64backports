@@ -78,6 +78,10 @@ namespace plugin {
             logger::info("geometry not referenced by anything else");
             return nullptr;
         }
+        if (geo->AsSkinnedDecalTriShape() != nullptr) {
+            logger::info("decal tri shape not currently supported");
+            return nullptr;
+        }
         if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
             return nullptr;
         }
@@ -147,6 +151,7 @@ namespace plugin {
                 std::transform(obj_name_lower.begin(), obj_name_lower.end(), obj_name_lower.begin(),
                                [](unsigned char c) { return std::tolower(c); });
                 if (obj_name_lower.contains("[ovl") || obj_name_lower.contains("[sovl")) {
+                    logger::info("skipping overlay");
                     continue;
                 }
             }
@@ -175,10 +180,8 @@ namespace plugin {
                 if (!material) {
                     continue;
                 }
-                if (!property->flags.all(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals)) {
-                    std::lock_guard rl(recalcs_in_progress_lock);
-                    progress_data.geo_queue.push(RE::NiPointer(geo));
-                }
+                std::lock_guard rl(recalcs_in_progress_lock);
+                progress_data.geo_queue.push(RE::NiPointer(geo));
             }
         }
     }
@@ -249,11 +252,14 @@ namespace plugin {
                                                         std::transform(addon_name_lower.begin(), addon_name_lower.end(),
                                                                        addon_name_lower.begin(),
                                                                        [](unsigned char c) { return std::tolower(c); });
-                                                        if (addon_name_lower.starts_with("!ube")) {
+                                                        if (addon_name_lower.contains("!ube")) {
                                                         
                                                             found_ube = true;
                                                         
                                                         }
+                                                    }
+                                                    if (obj.part && obj.part->model.contains("UBE")) {
+                                                        found_ube = true;
                                                     }
                                                 }
                                             }
@@ -264,9 +270,12 @@ namespace plugin {
                                                         std::transform(addon_name_lower.begin(), addon_name_lower.end(),
                                                                        addon_name_lower.begin(),
                                                                        [](unsigned char c) { return std::tolower(c); });
-                                                        if (addon_name_lower.starts_with("!ube")) {
+                                                        if (addon_name_lower.contains("!ube")) {
                                                             found_ube = true;
                                                         }
+                                                    }
+                                                    if (obj.part && obj.part->model.contains("UBE")) {
+                                                        found_ube = true;
                                                     }
                                                 }
                                             }
