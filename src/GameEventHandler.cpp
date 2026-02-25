@@ -103,10 +103,15 @@ namespace plugin {
         if (!material) {
             return nullptr;
         }
+        RE::NiPointer<RE::NiObject> newPartition = nullptr;
+        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
+        if (!newPartition) {
+            return nullptr;
+        }
+        RE::NiPointer<RE::NiSkinPartition> newSkinPartition =
+            RE::NiPointer<RE::NiSkinPartition>((RE::NiSkinPartition *) newPartition.get());
 
-        RE::NiPointer<RE::NiSkinPartition> newSkinPartition = geo->GetGeometryRuntimeData().skinInstance->skinPartition;
-
-        if (newSkinPartition->partitions.size() == 0 || newSkinPartition->numPartitions==0) {
+        if (newSkinPartition->partitions.size() == 0 || newSkinPartition->numPartitions == 0) {
             return nullptr;
         }
 
@@ -236,7 +241,6 @@ namespace plugin {
                             }
                             auto &data = recalcs_in_progress[p.first];
                             if (auto actor = p.second.get()) {
-                                
                                 if (!actor->Is3DLoaded()) {
                                     actor->Load3D(false);
                                 }
@@ -244,7 +248,6 @@ namespace plugin {
                                     if (auto actor_biped = actor->GetCurrentBiped()) {
                                         bool found_ube = false;
                                         if (ubeonly == true) {
-                                            
                                             for (auto &obj: actor_biped->bufferedObjects) {
                                                 if (obj.addon) {
                                                     if (auto name = obj.addon->GetName()) {
@@ -253,9 +256,7 @@ namespace plugin {
                                                                        addon_name_lower.begin(),
                                                                        [](unsigned char c) { return std::tolower(c); });
                                                         if (addon_name_lower.contains("!ube")) {
-                                                        
                                                             found_ube = true;
-                                                        
                                                         }
                                                     }
                                                     if (obj.part && obj.part->model.contains("UBE")) {
@@ -305,7 +306,7 @@ namespace plugin {
                                     }
                                 }
                             }
-                            
+
                             RE::FormID actor_id = p.first;
                             auto process_function = [](RE::FormID actor_id) {
                                 std::lock_guard rl(recalcs_in_progress_lock);
@@ -507,7 +508,7 @@ namespace plugin {
     Update3DModelRecalculate *recalchook = nullptr;
     CellRecalculate *recalchook2 = nullptr;
     static std::atomic<uint32_t> skee_loaded = 0;
-    
+
     void GameEventHandler::onPostPostLoad() {
         mINI::INIFile file("Data\\skse\\plugins\\skee64backports.ini");
         mINI::INIStructure ini;
@@ -548,7 +549,7 @@ namespace plugin {
                     DetourAttach(&(PVOID &) UpdateMorphsHook, &UpdateMorphsHook_fn);
                     DetourTransactionCommit();
                     OriginalFaceApplyMorph = (uintptr_t (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *,
-                                                       RE::BSFixedString *morphName, float relative)) REL::Offset(0x3d2220)
+                                                            RE::BSFixedString *morphName, float relative)) REL::Offset(0x3d2220)
                                                  .address();
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
@@ -604,7 +605,7 @@ namespace plugin {
                     DetourTransactionCommit();
                     applying_slider = false;
                     OriginalFaceApplyMorph = (uintptr_t (*)(RE::BSFaceGenManager *, RE::BSFaceGenNiNode *, RE::TESNPC *,
-                                                       RE::BSFixedString *morphName, float relative)) REL::Offset(0x42b610)
+                                                            RE::BSFixedString *morphName, float relative)) REL::Offset(0x42b610)
                                                  .address();
                     DetourTransactionBegin();
                     DetourUpdateThread(GetCurrentThread());
