@@ -57,14 +57,14 @@ namespace plugin {
     typedef struct {
             RE::FormID actor_id;
             RE::ActorHandle actor_handle;
-            std::queue<RE::NiPointer<RE::BSGeometry>> geo_queue;
+            std::queue<std::pair<RE::NiPointer<RE::BSGeometry>,bool>> geo_queue;
     } RecalcProgressData;
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<RE::FormID, RE::ActorHandle> queued_recalcs;
     std::recursive_mutex recalcs_in_progress_lock;
     std::unordered_map<RE::FormID, RecalcProgressData> recalcs_in_progress;
     uint64_t recalc_tasks_started = 0;
-    static RE::NiSkinPartition *ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> &geo) {
+    static RE::NiSkinPartition *ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> &geo,bool is_ube) {
         if (GetUserDataFixed(geo.get()) == nullptr) {
             logger::info("geometry doesn't have user data");
             return nullptr;
@@ -99,6 +99,15 @@ namespace plugin {
         }
         RE::BSShaderProperty *property =
             (RE::BSShaderProperty *) geo->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kEffect].get();
+        if (is_ube) {
+            std::string obj_name_lower = geo->name.c_str();
+            std::transform(obj_name_lower.begin(), obj_name_lower.end(), obj_name_lower.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            if (obj_name_lower.contains("[ovl") || obj_name_lower.contains("[sovl")) {
+                logger::info("changing normal space for UBE overlays from {}", property->flags.underlying());
+                property->flags.reset(RE::BSShaderProperty::EShaderPropertyFlag::kModelSpaceNormals);
+            }
+        }
         auto material = property->material;
         if (!material) {
             return nullptr;
@@ -125,6 +134,7 @@ namespace plugin {
                            ((size_t) newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                 }
             }
+            
             logger::info("new skin partition ref count before update {} {}", geo->name.c_str(), newSkinPartition->GetRefCount());
             logger::info("old skin instance ref count before update {} {}", geo->name.c_str(),
                          geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
@@ -143,7 +153,7 @@ namespace plugin {
         }
     }
     static void WalkRecalculateNormals(RE::FormID actor_id, RE::NiNode *node, std::vector<std::jthread> &spawned_threads,
-                                       RecalcProgressData &progress_data) {
+                                       RecalcProgressData &progress_data, bool is_ube) {
         if (node == nullptr) {
             return;
         }
@@ -161,7 +171,7 @@ namespace plugin {
                 }
             }
             if (auto c_node = obj->AsNode()) {
-                WalkRecalculateNormals(actor_id, c_node, spawned_threads, progress_data);
+                WalkRecalculateNormals(actor_id, c_node, spawned_threads, progress_data, is_ube);
             }
             if (auto geo = obj->AsGeometry()) {
                 if (geo->GetGeometryRuntimeData().skinInstance == nullptr) {
@@ -185,8 +195,9 @@ namespace plugin {
                 if (!material) {
                     continue;
                 }
+
                 std::lock_guard rl(recalcs_in_progress_lock);
-                progress_data.geo_queue.push(RE::NiPointer(geo));
+                progress_data.geo_queue.push(std::make_pair(RE::NiPointer(geo),is_ube));
             }
         }
     }
@@ -236,7 +247,7 @@ namespace plugin {
                                 RecalcProgressData data;
                                 data.actor_id = p.first;
                                 data.actor_handle = p.second;
-                                data.geo_queue = std::queue<RE::NiPointer<RE::BSGeometry>>();
+                                data.geo_queue = std::queue<std::pair<RE::NiPointer<RE::BSGeometry>, bool>>();
                                 recalcs_in_progress.insert_or_assign(p.first, data);
                             }
                             auto &data = recalcs_in_progress[p.first];
@@ -247,45 +258,45 @@ namespace plugin {
                                 if (actor->Is3DLoaded()) {
                                     if (auto actor_biped = actor->GetCurrentBiped()) {
                                         bool found_ube = false;
-                                        if (ubeonly == true) {
-                                            for (auto &obj: actor_biped->bufferedObjects) {
-                                                if (obj.addon) {
-                                                    if (auto name = obj.addon->GetName()) {
-                                                        std::string addon_name_lower = name;
-                                                        std::transform(addon_name_lower.begin(), addon_name_lower.end(),
-                                                                       addon_name_lower.begin(),
-                                                                       [](unsigned char c) { return std::tolower(c); });
-                                                        if (addon_name_lower.contains("!ube")) {
-                                                            found_ube = true;
-                                                        }
-                                                    }
-                                                    if (obj.part && obj.part->model.contains("UBE")) {
+
+                                        for (auto &obj: actor_biped->bufferedObjects) {
+                                            if (obj.addon) {
+                                                if (auto name = obj.addon->GetName()) {
+                                                    std::string addon_name_lower = name;
+                                                    std::transform(addon_name_lower.begin(), addon_name_lower.end(),
+                                                                    addon_name_lower.begin(),
+                                                                    [](unsigned char c) { return std::tolower(c); });
+                                                    if (addon_name_lower.contains("!ube")) {
                                                         found_ube = true;
                                                     }
                                                 }
-                                            }
-                                            for (auto &obj: actor_biped->objects) {
-                                                if (obj.addon) {
-                                                    if (auto name = obj.addon->GetName()) {
-                                                        std::string addon_name_lower = name;
-                                                        std::transform(addon_name_lower.begin(), addon_name_lower.end(),
-                                                                       addon_name_lower.begin(),
-                                                                       [](unsigned char c) { return std::tolower(c); });
-                                                        if (addon_name_lower.contains("!ube")) {
-                                                            found_ube = true;
-                                                        }
-                                                    }
-                                                    if (obj.part && obj.part->model.contains("UBE")) {
-                                                        found_ube = true;
-                                                    }
+                                                if (obj.part && obj.part->model.contains("UBE")) {
+                                                    found_ube = true;
                                                 }
                                             }
                                         }
+                                        for (auto &obj: actor_biped->objects) {
+                                            if (obj.addon) {
+                                                if (auto name = obj.addon->GetName()) {
+                                                    std::string addon_name_lower = name;
+                                                    std::transform(addon_name_lower.begin(), addon_name_lower.end(),
+                                                                    addon_name_lower.begin(),
+                                                                    [](unsigned char c) { return std::tolower(c); });
+                                                    if (addon_name_lower.contains("!ube")) {
+                                                        found_ube = true;
+                                                    }
+                                                }
+                                                if (obj.part && obj.part->model.contains("UBE")) {
+                                                    found_ube = true;
+                                                }
+                                            }
+                                        }
+                                        
                                         if (found_ube || !ubeonly) {
                                             if (auto obj = actor->Get3D1(true)) {
                                                 if (actor->Get3D1(true) != actor->Get3D1(false)) {
                                                     if (auto node = obj->AsNode()) {
-                                                        WalkRecalculateNormals(p.first, node, spawned_threads1, data);
+                                                        WalkRecalculateNormals(p.first, node, spawned_threads1, data,found_ube);
                                                     }
                                                 }
                                             }
@@ -293,13 +304,13 @@ namespace plugin {
                                             if (actor->Is3DLoaded()) {
                                                 if (auto obj = actor->Get3D1(false)) {
                                                     if (auto node = obj->AsNode()) {
-                                                        WalkRecalculateNormals(p.first, node, spawned_threads2, data);
+                                                        WalkRecalculateNormals(p.first, node, spawned_threads2, data,found_ube);
                                                     }
                                                 }
                                             }
                                             if (actor->Is3DLoaded()) {
                                                 if (auto facenode = actor->GetFaceNode()) {
-                                                    WalkRecalculateNormals(p.first, facenode, spawned_threads3, data);
+                                                    WalkRecalculateNormals(p.first, facenode, spawned_threads3, data,found_ube);
                                                 }
                                             }
                                         }
@@ -338,10 +349,10 @@ namespace plugin {
                                 } else {
                                     auto &g = rd.geo_queue.front();
 
-                                    auto nsp = ProcessRecalcQueue(g);
+                                    auto nsp = ProcessRecalcQueue(g.first,g.second);
 
                                     if (nsp) {
-                                        logger::info("new skin partition ref count after return {} {}", g->name.c_str(),
+                                        logger::info("new skin partition ref count after return {} {}", g.first->name.c_str(),
                                                      nsp->GetRefCount());
                                     }
                                     rd.geo_queue.pop();
