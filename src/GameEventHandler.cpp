@@ -57,14 +57,14 @@ namespace plugin {
     typedef struct {
             RE::FormID actor_id;
             RE::ActorHandle actor_handle;
-            std::queue<std::pair<RE::NiPointer<RE::BSGeometry>,bool>> geo_queue;
+            std::queue<std::pair<RE::NiPointer<RE::BSGeometry>, bool>> geo_queue;
     } RecalcProgressData;
     std::map<std::tuple<RE::NiNode *, RE::TESNPC *, std::string>, FaceMorphData> queued_morphs;
     std::unordered_map<RE::FormID, RE::ActorHandle> queued_recalcs;
     std::recursive_mutex recalcs_in_progress_lock;
     std::unordered_map<RE::FormID, RecalcProgressData> recalcs_in_progress;
     uint64_t recalc_tasks_started = 0;
-    static RE::NiSkinPartition *ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> &geo,bool is_ube) {
+    static RE::NiSkinPartition *ProcessRecalcQueue(RE::NiPointer<RE::BSGeometry> &geo, bool is_ube) {
         if (GetUserDataFixed(geo.get()) == nullptr) {
             logger::info("geometry doesn't have user data");
             return nullptr;
@@ -112,8 +112,7 @@ namespace plugin {
         if (!material) {
             return nullptr;
         }
-        RE::NiPointer<RE::NiObject> newPartition = nullptr;
-        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
+        RE::NiPointer<RE::NiObject> newPartition = geo->GetGeometryRuntimeData().skinInstance->skinPartition;
         if (!newPartition) {
             return nullptr;
         }
@@ -134,7 +133,7 @@ namespace plugin {
                            ((size_t) newSkinPartition->vertexCount) * newSkinPartition->partitions[0].buffData->vertexDesc.GetSize());
                 }
             }
-            
+
             logger::info("new skin partition ref count before update {} {}", geo->name.c_str(), newSkinPartition->GetRefCount());
             logger::info("old skin instance ref count before update {} {}", geo->name.c_str(),
                          geo->GetGeometryRuntimeData().skinInstance->GetRefCount());
@@ -197,7 +196,7 @@ namespace plugin {
                 }
 
                 std::lock_guard rl(recalcs_in_progress_lock);
-                progress_data.geo_queue.push(std::make_pair(RE::NiPointer(geo),is_ube));
+                progress_data.geo_queue.push(std::make_pair(RE::NiPointer(geo), is_ube));
             }
         }
     }
@@ -264,8 +263,8 @@ namespace plugin {
                                                 if (auto name = obj.addon->GetName()) {
                                                     std::string addon_name_lower = name;
                                                     std::transform(addon_name_lower.begin(), addon_name_lower.end(),
-                                                                    addon_name_lower.begin(),
-                                                                    [](unsigned char c) { return std::tolower(c); });
+                                                                   addon_name_lower.begin(),
+                                                                   [](unsigned char c) { return std::tolower(c); });
                                                     if (addon_name_lower.contains("!ube")) {
                                                         found_ube = true;
                                                     }
@@ -280,8 +279,8 @@ namespace plugin {
                                                 if (auto name = obj.addon->GetName()) {
                                                     std::string addon_name_lower = name;
                                                     std::transform(addon_name_lower.begin(), addon_name_lower.end(),
-                                                                    addon_name_lower.begin(),
-                                                                    [](unsigned char c) { return std::tolower(c); });
+                                                                   addon_name_lower.begin(),
+                                                                   [](unsigned char c) { return std::tolower(c); });
                                                     if (addon_name_lower.contains("!ube")) {
                                                         found_ube = true;
                                                     }
@@ -291,12 +290,12 @@ namespace plugin {
                                                 }
                                             }
                                         }
-                                        
+
                                         if (found_ube || !ubeonly) {
                                             if (auto obj = actor->Get3D1(true)) {
                                                 if (actor->Get3D1(true) != actor->Get3D1(false)) {
                                                     if (auto node = obj->AsNode()) {
-                                                        WalkRecalculateNormals(p.first, node, spawned_threads1, data,found_ube);
+                                                        WalkRecalculateNormals(p.first, node, spawned_threads1, data, found_ube);
                                                     }
                                                 }
                                             }
@@ -304,13 +303,13 @@ namespace plugin {
                                             if (actor->Is3DLoaded()) {
                                                 if (auto obj = actor->Get3D1(false)) {
                                                     if (auto node = obj->AsNode()) {
-                                                        WalkRecalculateNormals(p.first, node, spawned_threads2, data,found_ube);
+                                                        WalkRecalculateNormals(p.first, node, spawned_threads2, data, found_ube);
                                                     }
                                                 }
                                             }
                                             if (actor->Is3DLoaded()) {
                                                 if (auto facenode = actor->GetFaceNode()) {
-                                                    WalkRecalculateNormals(p.first, facenode, spawned_threads3, data,found_ube);
+                                                    WalkRecalculateNormals(p.first, facenode, spawned_threads3, data, found_ube);
                                                 }
                                             }
                                         }
@@ -349,7 +348,7 @@ namespace plugin {
                                 } else {
                                     auto &g = rd.geo_queue.front();
 
-                                    auto nsp = ProcessRecalcQueue(g.first,g.second);
+                                    auto nsp = ProcessRecalcQueue(g.first, g.second);
 
                                     if (nsp) {
                                         logger::info("new skin partition ref count after return {} {}", g.first->name.c_str(),
