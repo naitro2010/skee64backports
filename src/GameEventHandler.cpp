@@ -112,7 +112,8 @@ namespace plugin {
         if (!material) {
             return nullptr;
         }
-        RE::NiPointer<RE::NiObject> newPartition = geo->GetGeometryRuntimeData().skinInstance->skinPartition;
+        RE::NiPointer<RE::NiObject> newPartition = nullptr;
+        geo->GetGeometryRuntimeData().skinInstance->skinPartition->CreateDeepCopy(newPartition);
         if (!newPartition) {
             return nullptr;
         }
