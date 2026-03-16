@@ -491,7 +491,7 @@ namespace plugin {
                     a_event->cell->ForEachReference([](RE::TESObjectREFR *ref) {
                         if (auto actor = ref->As<RE::Actor>()) {
                             if (!actor->Is3DLoaded()) {
-                                actor->Load3D(true);
+                                actor->Load3D(false);
                             }
                             if (RE::PlayerCharacter::GetSingleton()) {
                                 AddActorToRecalculate(actor);
