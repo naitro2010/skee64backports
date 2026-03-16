@@ -490,7 +490,7 @@ namespace plugin {
                 if (a_event && a_event->cell) {
                     a_event->cell->ForEachReference([](RE::TESObjectREFR *ref) {
                         if (auto actor = ref->As<RE::Actor>()) {
-                            if (!actor->Is3DLoaded() == false) {
+                            if (!actor->Is3DLoaded()) {
                                 actor->Load3D(true);
                             }
                             if (RE::PlayerCharacter::GetSingleton()) {
