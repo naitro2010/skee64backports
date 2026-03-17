@@ -253,7 +253,7 @@ namespace plugin {
                             auto &data = recalcs_in_progress[p.first];
                             if (auto actor = p.second.get()) {
                                 if (!actor->Is3DLoaded()) {
-                                    actor->Load3D(false);
+                                    actor->Load3D(true);
                                 }
                                 if (actor->Is3DLoaded()) {
                                     if (auto actor_biped = actor->GetCurrentBiped()) {
@@ -490,9 +490,6 @@ namespace plugin {
                 if (a_event && a_event->cell) {
                     a_event->cell->ForEachReference([](RE::TESObjectREFR *ref) {
                         if (auto actor = ref->As<RE::Actor>()) {
-                            if (!actor->Is3DLoaded()) {
-                                actor->Load3D(false);
-                            }
                             if (RE::PlayerCharacter::GetSingleton()) {
                                 AddActorToRecalculate(actor);
                             }
