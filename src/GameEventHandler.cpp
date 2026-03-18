@@ -253,7 +253,10 @@ namespace plugin {
                             auto &data = recalcs_in_progress[p.first];
                             if (auto actor = p.second.get()) {
                                 if (!actor->Is3DLoaded()) {
-                                    actor->Load3D(true);
+                                    if (auto node=actor->Load3D(true)) {
+                                        actor->Set3D(node);
+                                    }
+                                    
                                 }
                                 if (actor->Is3DLoaded()) {
                                     if (auto actor_biped = actor->GetCurrentBiped()) {
