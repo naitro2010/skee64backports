@@ -528,6 +528,9 @@ namespace plugin {
         if (ini["SKEEBackports"]["nooverlaynormals"] == "true") {
             nooverlaynormals = true;
         }
+        if (ini["SKEEBackports"]["disablelogging"] == "true") {
+            spdlog::default_logger()->set_level(spdlog::level::level_enum::err);
+        }
         task_pool_ptr = (bool (*)(void)) REL::VariantID(38079, 39033, 0x6488a0).address();
         if (HMODULE handle = GetModuleHandleA("skee64.dll")) {
             MODULEINFO skee64_info;
